@@ -103,22 +103,44 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
 
   const handleDelete = async () => {
     if (!confirmDelete) { setConfirmDelete(true); return }
-    setDeleting(true)
-    try { await remove(product.id); onDeleted?.(product.id); onClose() }
-    catch (e) { setError(e.message) }
-    finally { setDeleting(false) }
+    setDeleting(true); setError('')
+    try {
+      await remove(product.id)
+      await onDeleted?.(product.id)
+      onClose()
+    } catch (e) {
+      console.error('Delete error:', e)
+      setError(e?.message || 'Erro ao excluir o produto. Tente novamente.')
+      setConfirmDelete(false)
+    } finally { setDeleting(false) }
   }
 
-  const footer = (
+  const footer = confirmDelete ? (
+    /* Confirmation mode — replace all buttons */
+    <>
+      <span style={{ marginRight: 'auto', fontSize: 13, color: '#C73539', fontWeight: 600 }}>
+        Excluir permanentemente?
+      </span>
+      <button className="btn-secondary" onClick={() => setConfirmDelete(false)} disabled={deleting}>
+        Não, cancelar
+      </button>
+      <button onClick={handleDelete} disabled={deleting}
+        style={{ background: '#C73539', color: '#fff', border: 'none', borderRadius: 8,
+          padding: '10px 18px', fontFamily: 'var(--font-family)', fontSize: 14,
+          fontWeight: 700, cursor: deleting ? 'not-allowed' : 'pointer',
+          opacity: deleting ? 0.6 : 1 }}>
+        {deleting ? 'Excluindo…' : 'Sim, excluir'}
+      </button>
+    </>
+  ) : (
+    /* Normal mode */
     <>
       {!isNew && (
-        <button className="btn-secondary" onClick={handleDelete} disabled={deleting}
-          style={{ marginRight: 'auto', color: confirmDelete ? '#C73539' : undefined,
-            borderColor: confirmDelete ? '#C73539' : undefined }}>
-          {deleting ? 'Excluindo…' : confirmDelete ? 'Confirmar exclusão?' : 'Excluir'}
+        <button className="btn-secondary" onClick={handleDelete}
+          style={{ marginRight: 'auto', color: 'var(--color-text-soft)' }}>
+          Excluir
         </button>
       )}
-      {confirmDelete && <button className="btn-secondary" onClick={() => setConfirmDelete(false)}>Cancelar</button>}
       <button className="btn-secondary" onClick={onClose} disabled={saving}>Cancelar</button>
       <button className="btn-primary" onClick={handleSave} disabled={saving}>
         {saving ? 'Salvando…' : isNew ? 'Criar Produto' : 'Salvar'}
