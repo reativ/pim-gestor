@@ -14,7 +14,7 @@ export default function Products({ session }) {
   const [loading, setLoading]   = useState(true)
   const [search, setSearch]     = useState('')
   const [filter, setFilter]     = useState('all')
-  const [view, setView]         = useState('list')   // list | table
+  const [view, setView]         = useState('table')  // list | table
   const [editProduct, setEditProduct] = useState(null)
   const [showImport, setShowImport]   = useState(false)
 

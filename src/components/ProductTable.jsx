@@ -1,5 +1,6 @@
 import Thumbnail from './Thumbnail'
 import Badge from './Badge'
+import { CopyField } from './CopyButton'
 import { formatCurrency, formatNCM } from '../lib/utils'
 import { Edit2, ExternalLink, Youtube, Video, CheckCircle, XCircle } from 'lucide-react'
 
@@ -26,16 +27,18 @@ export default function ProductTable({ products, onEdit }) {
             <th>SKU</th>
             <th>EAN</th>
             <th>NCM</th>
+            <th>CEST</th>
             <th>Custo</th>
             <th style={{ textAlign: 'center' }}>Vídeo ML</th>
             <th style={{ textAlign: 'center' }}>Vídeo Shopee</th>
             <th style={{ textAlign: 'center' }}>Fotos</th>
-            <th style={{ width: 80 }}></th>
+            <th style={{ width: 52 }}></th>
           </tr>
         </thead>
         <tbody>
           {products.map((p) => (
             <tr key={p.id} style={{ cursor: 'pointer' }} onClick={() => onEdit(p)}>
+
               {/* Thumbnail */}
               <td>
                 <Thumbnail product={p} size={44} radius={6} />
@@ -43,31 +46,22 @@ export default function ProductTable({ products, onEdit }) {
 
               {/* Nome */}
               <td style={{ maxWidth: 240 }}>
-                <div style={{
-                  fontWeight:      600,
-                  fontSize:        14,
-                  overflow:        'hidden',
-                  textOverflow:    'ellipsis',
-                  whiteSpace:      'nowrap',
-                  maxWidth:        220,
-                  color:           p.nome ? 'var(--color-text)' : '#B0B0B0',
-                  fontStyle:       p.nome ? 'normal' : 'italic',
-                }}>
-                  {p.nome || 'Sem nome'}
-                </div>
+                {p.nome ? (
+                  <CopyField value={p.nome} label="nome" />
+                ) : (
+                  <span style={{ color: '#B0B0B0', fontStyle: 'italic', fontSize: 13 }}>Sem nome</span>
+                )}
               </td>
 
               {/* SKU */}
               <td>
-                <span style={{ fontFamily: 'monospace', fontSize: 13, color: 'var(--color-text-soft)' }}>
-                  {p.sku || '—'}
-                </span>
+                <CopyField value={p.sku} label="SKU" mono />
               </td>
 
               {/* EAN */}
               <td>
                 {p.ean ? (
-                  <span style={{ fontFamily: 'monospace', fontSize: 13 }}>{p.ean}</span>
+                  <CopyField value={p.ean} label="EAN" mono />
                 ) : (
                   <Badge variant="red">Pendente</Badge>
                 )}
@@ -76,15 +70,20 @@ export default function ProductTable({ products, onEdit }) {
               {/* NCM */}
               <td>
                 {p.ncm ? (
-                  <span style={{ fontFamily: 'monospace', fontSize: 13 }}>{formatNCM(p.ncm)}</span>
+                  <CopyField value={formatNCM(p.ncm)} label="NCM" mono />
                 ) : (
                   <Badge variant="orange">Pendente</Badge>
                 )}
               </td>
 
+              {/* CEST */}
+              <td>
+                <CopyField value={p.cest} label="CEST" mono />
+              </td>
+
               {/* Custo */}
               <td style={{ fontWeight: 600, color: 'var(--color-primary)' }}>
-                {formatCurrency(p.custo)}
+                <CopyField value={formatCurrency(p.custo)} label="custo" />
               </td>
 
               {/* Vídeo ML */}
@@ -96,6 +95,7 @@ export default function ProductTable({ products, onEdit }) {
                     rel="noreferrer"
                     onClick={(e) => e.stopPropagation()}
                     style={{ color: 'var(--color-teal)', display: 'inline-flex' }}
+                    title="Abrir vídeo ML"
                   >
                     <Youtube size={18} />
                   </a>
@@ -113,6 +113,7 @@ export default function ProductTable({ products, onEdit }) {
                     rel="noreferrer"
                     onClick={(e) => e.stopPropagation()}
                     style={{ color: '#EE4D2D', display: 'inline-flex' }}
+                    title="Abrir vídeo Shopee"
                   >
                     <Video size={18} />
                   </a>
@@ -130,6 +131,7 @@ export default function ProductTable({ products, onEdit }) {
                     rel="noreferrer"
                     onClick={(e) => e.stopPropagation()}
                     style={{ color: 'var(--color-primary)', display: 'inline-flex' }}
+                    title="Abrir pasta de fotos"
                   >
                     <ExternalLink size={16} />
                   </a>
@@ -166,6 +168,7 @@ export default function ProductTable({ products, onEdit }) {
                   <Edit2 size={14} />
                 </button>
               </td>
+
             </tr>
           ))}
         </tbody>
