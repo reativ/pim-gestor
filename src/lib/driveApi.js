@@ -13,6 +13,14 @@ export const extractFolderId = (url) => {
   return match ? match[1] : null
 }
 
+/** Cross-browser fetch with timeout (ms) */
+const fetchWithTimeout = (url, ms = 8000) => {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), ms)
+  return fetch(url, { signal: controller.signal })
+    .finally(() => clearTimeout(timer))
+}
+
 /**
  * Given a Drive folder URL, returns the thumbnail URL of the first image found.
  * Returns null if API key not set, folder not found, or no images.
@@ -24,10 +32,8 @@ export const getFirstImageFromFolder = async (folderUrl) => {
   try {
     const q = encodeURIComponent(`'${folderId}' in parents and mimeType contains 'image/' and trashed=false`)
     const fields = encodeURIComponent('files(id,name)')
-    const res = await fetch(
-      `https://www.googleapis.com/drive/v3/files?q=${q}&key=${API_KEY}&fields=${fields}&pageSize=1&orderBy=name`,
-      { signal: AbortSignal.timeout(5000) }
-    )
+    const url = `https://www.googleapis.com/drive/v3/files?q=${q}&key=${API_KEY}&fields=${fields}&pageSize=1&orderBy=name`
+    const res = await fetchWithTimeout(url, 8000)
     if (!res.ok) return null
     const data = await res.json()
     if (!data.files?.length) return null
