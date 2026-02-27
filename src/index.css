@@ -4,8 +4,8 @@
 
 /* ── Design System Tokens ─────────────────── */
 :root {
-  --color-primary:     #FF5A5F;
-  --color-primary-h:   #E5484D;
+  --color-primary:     #008cf4;
+  --color-primary-h:   #0079d9;
   --color-teal:        #00A699;
   --color-teal-h:      #008F83;
   --color-orange:      #FC642D;
@@ -125,7 +125,7 @@ body {
 }
 .input:focus {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(255,90,95,0.12);
+  box-shadow: 0 0 0 3px rgba(0,140,244,0.12);
 }
 .input::placeholder { color: #B0B0B0; }
 
@@ -227,3 +227,6 @@ body {
   color: var(--color-text-soft);
   text-align: center;
 }
+
+/* Copy field — show icon on hover (global, works in table + list) */
+.copy-field-wrap:hover .copy-btn { opacity: 1 !important; }

@@ -7,17 +7,16 @@ export default {
         sans: ['Plus Jakarta Sans', 'sans-serif'],
       },
       colors: {
-        // Airbnb Design System
-        rausch: {
-          DEFAULT: '#FF5A5F',
-          50:  '#FFF0F0',
-          100: '#FFD6D7',
-          200: '#FFACAE',
-          300: '#FF8285',
-          400: '#FF5A5F',
-          500: '#E5484D',
-          600: '#C73539',
-          700: '#A02326',
+        brand: {
+          DEFAULT: '#008cf4',
+          50:  '#E6F4FE',
+          100: '#BFE0FD',
+          200: '#80C4FB',
+          300: '#40A8F8',
+          400: '#008cf4',
+          500: '#0079d9',
+          600: '#0062b3',
+          700: '#004b8c',
         },
         babu: {
           DEFAULT: '#00A699',

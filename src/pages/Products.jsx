@@ -34,7 +34,7 @@ export default function Products({ session }) {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--color-bg)' }}>
-      <Navbar productCount={products.length} userEmail={session?.user?.email} />
+      <Navbar userEmail={session?.user?.email} />
 
       <main style={{ maxWidth: 1280, margin: '0 auto', padding: '28px 24px' }}>
 
