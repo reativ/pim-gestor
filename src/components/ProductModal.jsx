@@ -2,17 +2,41 @@ import { useState } from 'react'
 import Modal from './Modal'
 import Thumbnail from './Thumbnail'
 import GS1Button from './GS1Button'
+import { CopyIconButton } from './CopyButton'
 import { create, update, remove } from '../lib/db'
-import { driveUrlToThumbnail } from '../lib/utils'
 import {
-  Image, Link2, Youtube, Video, BarChart2, Hash,
-  Tag, DollarSign, Trash2, ExternalLink
+  Image, Youtube, Video, BarChart2, Hash, Tag, DollarSign, ExternalLink
 } from 'lucide-react'
 
 const EMPTY = {
   nome: '', sku: '', ncm: '', cest: '', ean: '',
   custo: '', fotos_drive: '', thumbnail: '',
   video_ml: '', video_shopee: '',
+}
+
+function Section({ title, children }) {
+  return (
+    <div>
+      <div style={{
+        fontSize: 11.5, fontWeight: 800, textTransform: 'uppercase',
+        letterSpacing: '0.08em', color: 'var(--color-text-soft)',
+        marginBottom: 12, paddingBottom: 8, borderBottom: '1px solid var(--color-border)',
+      }}>
+        {title}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {children}
+      </div>
+    </div>
+  )
+}
+
+function Row({ children }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+      {children}
+    </div>
+  )
 }
 
 function Field({ label, icon, children, hint }) {
@@ -28,296 +52,195 @@ function Field({ label, icon, children, hint }) {
   )
 }
 
-function Row({ children, cols = 2 }) {
+// Input + optional copy button
+function InputWithCopy({ value, onChange, placeholder, type = 'text', maxLength, copyable = true, ...rest }) {
   return (
-    <div style={{
-      display:             'grid',
-      gridTemplateColumns: `repeat(${cols}, 1fr)`,
-      gap:                  16,
-    }}>
-      {children}
+    <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
+      <input
+        className="input"
+        type={type}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        maxLength={maxLength}
+        style={{ flex: 1, ...rest.style }}
+      />
+      {copyable && value && <CopyIconButton value={value} />}
     </div>
   )
 }
 
 export default function ProductModal({ product = null, onClose, onSaved, onDeleted }) {
   const isNew = !product?.id
-  const [form, setForm] = useState(isNew ? EMPTY : { ...product })
-  const [saving, setSaving] = useState(false)
+  const [form, setForm]       = useState(isNew ? EMPTY : { ...product })
+  const [saving, setSaving]   = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [error, setError]     = useState('')
 
   const set = (field, value) => setForm((f) => ({ ...f, [field]: value }))
 
   const handleSave = async () => {
-    if (!form.nome.trim()) {
-      alert('Por favor, preencha o nome do produto.')
-      return
-    }
-    setSaving(true)
+    if (!form.nome.trim()) { setError('Preencha o nome do produto.'); return }
+    setSaving(true); setError('')
     try {
-      if (isNew) {
-        const p = create(form)
-        onSaved?.(p)
-      } else {
-        const p = update(product.id, form)
-        onSaved?.(p)
-      }
+      if (isNew) { const p = await create(form); onSaved?.(p) }
+      else       { const p = await update(product.id, form); onSaved?.(p) }
       onClose()
-    } finally {
-      setSaving(false)
-    }
+    } catch (e) {
+      setError(e.message || 'Erro ao salvar.')
+    } finally { setSaving(false) }
   }
 
   const handleDelete = async () => {
     if (!confirmDelete) { setConfirmDelete(true); return }
     setDeleting(true)
     try {
-      remove(product.id)
+      await remove(product.id)
       onDeleted?.(product.id)
       onClose()
-    } finally {
-      setDeleting(false)
-    }
+    } catch (e) {
+      setError(e.message)
+    } finally { setDeleting(false) }
   }
-
-  // Live preview thumbnail
-  const previewProduct = { ...form }
-
-  // Drive open link
-  const driveLink = form.fotos_drive?.trim()
 
   const footer = (
     <>
       {!isNew && (
-        <button
-          className="btn-secondary"
-          onClick={handleDelete}
-          style={{
-            marginRight:   'auto',
-            color:         confirmDelete ? '#C73539' : undefined,
-            borderColor:   confirmDelete ? '#C73539' : undefined,
-          }}
-          disabled={deleting}
-        >
+        <button className="btn-secondary" onClick={handleDelete} disabled={deleting}
+          style={{ marginRight: 'auto', color: confirmDelete ? '#C73539' : undefined, borderColor: confirmDelete ? '#C73539' : undefined }}>
           {deleting ? 'Excluindo…' : confirmDelete ? 'Confirmar exclusão?' : 'Excluir'}
         </button>
       )}
-      {confirmDelete && (
-        <button className="btn-secondary" onClick={() => setConfirmDelete(false)}>
-          Cancelar
-        </button>
-      )}
-      <button className="btn-secondary" onClick={onClose} disabled={saving}>
-        Cancelar
-      </button>
+      {confirmDelete && <button className="btn-secondary" onClick={() => setConfirmDelete(false)}>Cancelar</button>}
+      <button className="btn-secondary" onClick={onClose} disabled={saving}>Cancelar</button>
       <button className="btn-primary" onClick={handleSave} disabled={saving}>
-        {saving ? 'Salvando…' : isNew ? 'Criar Produto' : 'Salvar Alterações'}
+        {saving ? 'Salvando…' : isNew ? 'Criar Produto' : 'Salvar'}
       </button>
     </>
   )
 
   return (
-    <Modal
-      title={isNew ? 'Novo Produto' : 'Editar Produto'}
-      onClose={onClose}
-      size="lg"
-      footer={footer}
-    >
-      <div style={{ display: 'flex', gap: 24, flexDirection: 'column' }}>
+    <Modal title={isNew ? 'Novo Produto' : 'Editar Produto'} onClose={onClose} size="lg" footer={footer}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
-        {/* Thumbnail Preview + GS1 */}
-        <div style={{
-          display:     'flex',
-          gap:          16,
-          alignItems:  'flex-start',
-          background:  '#FAFAFA',
-          borderRadius: 10,
-          padding:      16,
-          border:      '1px solid var(--color-border)',
-        }}>
-          <Thumbnail product={previewProduct} size={80} radius={10} />
+        {error && (
+          <div style={{ background: '#FFEBEB', border: '1px solid #FFD0D0', borderRadius: 8,
+            padding: '10px 14px', color: '#C73539', fontSize: 13 }}>
+            {error}
+          </div>
+        )}
+
+        {/* Preview + GS1 */}
+        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start',
+          background: '#FAFAFA', borderRadius: 10, padding: 16, border: '1px solid var(--color-border)' }}>
+          <Thumbnail product={form} size={80} radius={10} />
           <div style={{ flex: 1 }}>
             <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>
               {form.nome || <span style={{ color: '#B0B0B0', fontStyle: 'italic' }}>Nome do produto</span>}
             </div>
             <div style={{ fontSize: 13, color: 'var(--color-text-soft)', marginBottom: 10 }}>
-              {form.sku ? `SKU: ${form.sku}` : ''}
-              {form.ean ? ` · EAN: ${form.ean}` : ''}
+              {[form.sku && `SKU: ${form.sku}`, form.ean && `EAN: ${form.ean}`].filter(Boolean).join(' · ')}
             </div>
             {!isNew && <GS1Button product={form} />}
           </div>
         </div>
 
-        {/* Section: Identificação */}
+        {/* Identificação */}
         <Section title="Identificação">
           <Field label="Nome do Produto *" icon={<Tag size={14} />}>
-            <input
-              className="input"
+            <InputWithCopy
               value={form.nome}
               onChange={(e) => set('nome', e.target.value)}
               placeholder="Ex: Caixa Organizadora Plástica 10L"
             />
           </Field>
-
           <Row>
             <Field label="SKU" icon={<Hash size={14} />}>
-              <input
-                className="input"
-                value={form.sku}
-                onChange={(e) => set('sku', e.target.value)}
-                placeholder="Ex: CX-ORG-10L"
-              />
+              <InputWithCopy value={form.sku} onChange={(e) => set('sku', e.target.value)} placeholder="Ex: CX-ORG-10L" />
             </Field>
             <Field label="EAN / GTIN" icon={<BarChart2 size={14} />}>
-              <input
-                className="input"
-                value={form.ean}
-                onChange={(e) => set('ean', e.target.value)}
-                placeholder="Ex: 7891234567890"
-                maxLength={14}
-              />
+              <InputWithCopy value={form.ean} onChange={(e) => set('ean', e.target.value)} placeholder="Ex: 7891234567890" maxLength={14} />
             </Field>
           </Row>
-
           <Row>
-            <Field
-              label="NCM"
-              icon={<Hash size={14} />}
-              hint="8 dígitos — ex: 39241000"
-            >
-              <input
-                className="input"
+            <Field label="NCM" icon={<Hash size={14} />} hint="8 dígitos — ex: 39241000">
+              <InputWithCopy
                 value={form.ncm}
                 onChange={(e) => set('ncm', e.target.value.replace(/\D/g, '').slice(0, 8))}
-                placeholder="39241000"
-                maxLength={8}
+                placeholder="39241000" maxLength={8}
               />
             </Field>
             <Field label="CEST" icon={<Hash size={14} />}>
-              <input
-                className="input"
-                value={form.cest}
-                onChange={(e) => set('cest', e.target.value)}
-                placeholder="Ex: 1234567"
-              />
+              <InputWithCopy value={form.cest} onChange={(e) => set('cest', e.target.value)} placeholder="Ex: 1234567" />
             </Field>
           </Row>
-
           <Field label="Custo" icon={<DollarSign size={14} />}>
-            <input
-              className="input"
-              type="number"
-              step="0.01"
-              min="0"
-              value={form.custo}
-              onChange={(e) => set('custo', e.target.value)}
-              placeholder="0,00"
+            <InputWithCopy
+              value={form.custo} type="number" step="0.01" min="0"
+              onChange={(e) => set('custo', e.target.value)} placeholder="0,00"
               style={{ maxWidth: 180 }}
             />
           </Field>
         </Section>
 
-        {/* Section: Imagens */}
+        {/* Imagens */}
         <Section title="Imagens & Mídia">
-          <Field
-            label="Pasta de Fotos (Google Drive)"
-            icon={<Image size={14} />}
-            hint='Link da pasta do Drive com as fotos do produto (ex: drive.google.com/drive/folders/…)'
-          >
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                className="input"
-                value={form.fotos_drive}
+          <Field label="Pasta de Fotos (Google Drive)" icon={<Image size={14} />}
+            hint="Link da pasta do Drive com as fotos do produto">
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input className="input" value={form.fotos_drive}
                 onChange={(e) => set('fotos_drive', e.target.value)}
-                placeholder="https://drive.google.com/drive/folders/..."
-              />
-              {driveLink && (
-                <a
-                  href={driveLink}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{
-                    display:       'flex',
-                    alignItems:    'center',
-                    padding:       '0 12px',
-                    background:    '#F0F0F0',
-                    borderRadius:   8,
-                    border:        '1.5px solid var(--color-border)',
-                    color:         'var(--color-text-soft)',
-                    textDecoration: 'none',
-                    flexShrink:     0,
-                  }}
-                >
-                  <ExternalLink size={16} />
+                placeholder="https://drive.google.com/drive/folders/..." style={{ flex: 1 }} />
+              {form.fotos_drive && <CopyIconButton value={form.fotos_drive} />}
+              {form.fotos_drive && (
+                <a href={form.fotos_drive} target="_blank" rel="noreferrer"
+                  style={{ display: 'flex', alignItems: 'center', padding: '0 11px',
+                    background: '#F0F0F0', borderRadius: 8, border: '1.5px solid var(--color-border)',
+                    color: 'var(--color-text-soft)', textDecoration: 'none', flexShrink: 0 }}>
+                  <ExternalLink size={15} />
                 </a>
               )}
             </div>
           </Field>
-
-          <Field
-            label="Thumbnail (URL da imagem)"
-            icon={<Image size={14} />}
-            hint='Cole a URL de uma imagem do Drive: abra o arquivo → clique com direito → "Obter link" → use o link de compartilhamento ou o formato /thumbnail?id=ID'
-          >
-            <input
-              className="input"
-              value={form.thumbnail}
+          <Field label="Thumbnail (URL da imagem)" icon={<Image size={14} />}
+            hint='Suporta links do Drive no formato drive.google.com/file/d/ID/view'>
+            <InputWithCopy value={form.thumbnail}
               onChange={(e) => set('thumbnail', e.target.value)}
-              placeholder="https://drive.google.com/file/d/ID/view  ou URL direta da imagem"
-            />
+              placeholder="https://drive.google.com/file/d/..." />
           </Field>
         </Section>
 
-        {/* Section: Vídeos */}
+        {/* Vídeos */}
         <Section title="Links de Vídeo">
           <Field label="Vídeo Mercado Livre" icon={<Youtube size={14} />}>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                className="input"
-                value={form.video_ml}
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input className="input" value={form.video_ml}
                 onChange={(e) => set('video_ml', e.target.value)}
-                placeholder="https://youtube.com/..."
-              />
+                placeholder="https://youtube.com/..." style={{ flex: 1 }} />
+              {form.video_ml && <CopyIconButton value={form.video_ml} />}
               {form.video_ml && (
-                <a
-                  href={form.video_ml}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{
-                    display: 'flex', alignItems: 'center', padding: '0 12px',
-                    background: '#F0F0F0', borderRadius: 8,
-                    border: '1.5px solid var(--color-border)',
-                    color: 'var(--color-text-soft)', textDecoration: 'none', flexShrink: 0,
-                  }}
-                >
-                  <ExternalLink size={16} />
+                <a href={form.video_ml} target="_blank" rel="noreferrer"
+                  style={{ display: 'flex', alignItems: 'center', padding: '0 11px',
+                    background: '#F0F0F0', borderRadius: 8, border: '1.5px solid var(--color-border)',
+                    color: 'var(--color-text-soft)', textDecoration: 'none', flexShrink: 0 }}>
+                  <ExternalLink size={15} />
                 </a>
               )}
             </div>
           </Field>
-
           <Field label="Vídeo Shopee" icon={<Video size={14} />}>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input
-                className="input"
-                value={form.video_shopee}
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input className="input" value={form.video_shopee}
                 onChange={(e) => set('video_shopee', e.target.value)}
-                placeholder="https://youtube.com/..."
-              />
+                placeholder="https://youtube.com/..." style={{ flex: 1 }} />
+              {form.video_shopee && <CopyIconButton value={form.video_shopee} />}
               {form.video_shopee && (
-                <a
-                  href={form.video_shopee}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{
-                    display: 'flex', alignItems: 'center', padding: '0 12px',
-                    background: '#F0F0F0', borderRadius: 8,
-                    border: '1.5px solid var(--color-border)',
-                    color: 'var(--color-text-soft)', textDecoration: 'none', flexShrink: 0,
-                  }}
-                >
-                  <ExternalLink size={16} />
+                <a href={form.video_shopee} target="_blank" rel="noreferrer"
+                  style={{ display: 'flex', alignItems: 'center', padding: '0 11px',
+                    background: '#F0F0F0', borderRadius: 8, border: '1.5px solid var(--color-border)',
+                    color: 'var(--color-text-soft)', textDecoration: 'none', flexShrink: 0 }}>
+                  <ExternalLink size={15} />
                 </a>
               )}
             </div>
@@ -325,27 +248,5 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
         </Section>
       </div>
     </Modal>
-  )
-}
-
-function Section({ title, children }) {
-  return (
-    <div>
-      <div style={{
-        fontSize:     11.5,
-        fontWeight:    800,
-        textTransform:'uppercase',
-        letterSpacing: '0.08em',
-        color:        'var(--color-text-soft)',
-        marginBottom:  12,
-        paddingBottom:  8,
-        borderBottom:  '1px solid var(--color-border)',
-      }}>
-        {title}
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {children}
-      </div>
-    </div>
   )
 }

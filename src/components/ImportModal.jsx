@@ -74,11 +74,11 @@ export default function ImportModal({ onClose, onImported }) {
     handleFile(file)
   }
 
-  const handleImport = () => {
+  const handleImport = async () => {
     setImporting(true)
     try {
-      const created = bulkImport(rows)
-      setImportCount(created.length)
+      const count = await bulkImport(rows)
+      setImportCount(typeof count === "number" ? count : rows.length)
       setStep('done')
       onImported?.()
     } finally {
