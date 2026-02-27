@@ -20,37 +20,41 @@ export function CopyField({ label, value, mono = false }) {
   return (
     <span
       className="copy-field-wrap"
-      style={{ display: 'inline-flex', alignItems: 'center', gap: 3, position: 'relative' }}
+      onClick={handleCopy}
+      title={empty ? undefined : `Copiar ${label}`}
+      style={{
+        display:    'inline-flex',
+        alignItems: 'center',
+        gap:         3,
+        position:   'relative',
+        cursor:     empty ? 'default' : 'pointer',
+      }}
     >
       <span style={{
-        fontFamily:  mono ? 'monospace' : 'inherit',
-        color:       empty ? '#C0C0C0' : 'inherit',
-        fontStyle:   empty ? 'italic' : 'normal',
+        fontFamily:      mono ? 'monospace' : 'inherit',
+        color:           empty ? '#C0C0C0' : copied ? '#00736A' : 'inherit',
+        fontStyle:       empty ? 'italic' : 'normal',
+        textDecoration:  (!empty && !copied) ? 'underline dotted #CCC' : 'none',
+        textUnderlineOffset: 3,
+        transition:      'color 0.15s',
       }}>
         {empty ? '—' : value}
       </span>
 
       {!empty && (
-        <button
-          onClick={handleCopy}
+        <span
           className="copy-btn"
-          title={`Copiar ${label}`}
           style={{
-            background:    copied ? '#E6F7F6' : '#F0F0F0',
-            border:        'none',
-            borderRadius:   4,
-            padding:       '2px 4px',
-            cursor:        'pointer',
-            display:       'inline-flex',
-            alignItems:    'center',
-            color:         copied ? '#00736A' : '#999',
-            transition:    'all 0.15s',
-            opacity:        0,          // shown via CSS on parent hover
-            flexShrink:     0,
+            display:    'inline-flex',
+            alignItems: 'center',
+            color:      copied ? '#00736A' : '#BBB',
+            transition: 'all 0.15s',
+            opacity:     0,
+            flexShrink:  0,
           }}
         >
           {copied ? <Check size={11} /> : <Copy size={11} />}
-        </button>
+        </span>
       )}
     </span>
   )
