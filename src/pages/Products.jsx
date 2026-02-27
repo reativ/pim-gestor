@@ -9,7 +9,7 @@ import ProductModal from '../components/ProductModal'
 import ImportModal from '../components/ImportModal'
 import { Search, Plus, Upload, List, Table2, Download, X, RefreshCw } from 'lucide-react'
 
-export default function Products() {
+export default function Products({ session }) {
   const [products, setProducts] = useState([])
   const [loading, setLoading]   = useState(true)
   const [search, setSearch]     = useState('')
