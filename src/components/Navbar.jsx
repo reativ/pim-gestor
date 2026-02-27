@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Package, User, LogOut, ChevronDown } from 'lucide-react'
+import { LogOut, ChevronDown } from 'lucide-react'
 import { signOut } from '../lib/auth'
 import { hasSupabase } from '../lib/supabase'
 
@@ -36,13 +36,11 @@ export default function Navbar({ userEmail }) {
       }}>
 
         {/* Logo */}
-        <div style={{
-          background: 'var(--color-primary)', borderRadius: 10,
-          width: 34, height: 34, display: 'flex', alignItems: 'center',
-          justifyContent: 'center', flexShrink: 0,
-        }}>
-          <Package size={18} color="#fff" strokeWidth={2.5} />
-        </div>
+        <img
+          src="/logo.svg"
+          alt="Logo"
+          style={{ width: 36, height: 36, borderRadius: 8, flexShrink: 0, display: 'block' }}
+        />
 
         {/* Title */}
         <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--color-text)', flex: 1 }}>
