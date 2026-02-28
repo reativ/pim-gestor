@@ -1,12 +1,11 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useRef } from 'react'
 import Modal from './Modal'
 import Thumbnail from './Thumbnail'
-import GS1Button from './GS1Button'
 import { CopyIconButton } from './CopyButton'
 import { create, update, remove } from '../lib/db'
 import { getFirstImageFromFolder, hasGoogleApiKey, extractFolderId } from '../lib/driveApi'
-import { verifyEAN, openGS1Portal } from '../lib/gs1'
-import { Image, Youtube, Video, BarChart2, Hash, Tag, DollarSign, ExternalLink, CheckCircle, XCircle, ShieldCheck } from 'lucide-react'
+import { validateGTINChecksum } from '../lib/gs1'
+import { Image, Youtube, Video, BarChart2, Hash, Tag, DollarSign, ExternalLink, CheckCircle } from 'lucide-react'
 
 const EMPTY = {
   nome: '', sku: '', ncm: '', cest: '', ean: '',
@@ -53,6 +52,22 @@ function InputWithCopy({ value, onChange, placeholder, type = 'text', maxLength,
   )
 }
 
+// Gera o hint de validação do EAN enquanto o usuário digita
+function eanHint(ean) {
+  const digits = ean.replace(/\D/g, '')
+  if (!digits) return null
+  if (digits.length < 8) return null  // muito curto ainda, não incomodar
+
+  const result = validateGTINChecksum(digits)
+  if (result.reason === 'length') {
+    return `EAN deve ter 8, 12, 13 ou 14 dígitos (tem ${result.length})`
+  }
+  if (!result.valid) {
+    return `❌ Dígito verificador incorreto (esperado ${result.expected}, tem ${result.got})`
+  }
+  return `✅ EAN válido (${result.length} dígitos)`
+}
+
 export default function ProductModal({ product = null, onClose, onSaved, onDeleted }) {
   const isNew = !product?.id
   const [form, setForm]         = useState(isNew ? EMPTY : { ...product })
@@ -61,8 +76,6 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [error, setError]       = useState('')
   const [thumbStatus, setThumbStatus] = useState('idle') // idle | loading | found | notfound
-  const [eanStatus, setEanStatus]     = useState('idle') // idle | loading | found | notfound | error
-  const [eanResult, setEanResult]     = useState(null)   // { found, source, product }
   const driveDebounce = useRef(null)
 
   const set = (field, value) => setForm((f) => ({ ...f, [field]: value }))
@@ -70,16 +83,9 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
   // Auto-thumbnail: when fotos_drive changes, try to fetch first image
   const handleDriveChange = (url) => {
     set('fotos_drive', url)
-
-    // Only run if Google API key is configured AND it looks like a folder URL
-    if (!hasGoogleApiKey || !extractFolderId(url)) {
-      setThumbStatus('idle')
-      return
-    }
-
+    if (!hasGoogleApiKey || !extractFolderId(url)) { setThumbStatus('idle'); return }
     clearTimeout(driveDebounce.current)
     setThumbStatus('loading')
-
     driveDebounce.current = setTimeout(async () => {
       const thumbUrl = await getFirstImageFromFolder(url)
       if (thumbUrl) {
@@ -91,13 +97,6 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
         setTimeout(() => setThumbStatus('idle'), 3000)
       }
     }, 800)
-  }
-
-  const handleVerifyEAN = () => {
-    if (!form.ean) return
-    const result = verifyEAN(form.ean)
-    setEanResult(result)
-    setEanStatus(result.valid ? 'valid' : 'invalid')
   }
 
   const handleSave = async () => {
@@ -126,7 +125,6 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
   }
 
   const footer = confirmDelete ? (
-    /* Confirmation mode — replace all buttons */
     <>
       <span style={{ marginRight: 'auto', fontSize: 13, color: '#C73539', fontWeight: 600 }}>
         Excluir permanentemente?
@@ -143,7 +141,6 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
       </button>
     </>
   ) : (
-    /* Normal mode */
     <>
       {!isNew && (
         <button className="btn-secondary" onClick={handleDelete}
@@ -158,13 +155,14 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
     </>
   )
 
-  // Thumb status indicator
   const thumbHint = thumbStatus === 'loading'  ? '🔍 Buscando primeira imagem da pasta…'
     : thumbStatus === 'found'    ? '✅ Thumbnail detectada automaticamente!'
     : thumbStatus === 'notfound' ? '⚠️ Nenhuma imagem encontrada na pasta.'
     : hasGoogleApiKey
       ? 'Cole o link da pasta — a thumbnail será detectada automaticamente.'
       : 'Cole o link da pasta do Drive com as fotos do produto.'
+
+  const eanValidation = eanHint(form.ean)
 
   return (
     <Modal title={isNew ? 'Novo Produto' : 'Editar Produto'} onClose={onClose} size="lg" footer={footer}>
@@ -175,7 +173,7 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
             padding: '10px 14px', color: '#C73539', fontSize: 13 }}>{error}</div>
         )}
 
-        {/* Preview + GS1 */}
+        {/* Preview */}
         <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', background: '#FAFAFA',
           borderRadius: 10, padding: 16, border: '1px solid var(--color-border)' }}>
           <Thumbnail product={form} size={80} radius={10} />
@@ -183,10 +181,9 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
             <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>
               {form.nome || <span style={{ color: '#B0B0B0', fontStyle: 'italic' }}>Nome do produto</span>}
             </div>
-            <div style={{ fontSize: 13, color: 'var(--color-text-soft)', marginBottom: 10 }}>
+            <div style={{ fontSize: 13, color: 'var(--color-text-soft)' }}>
               {[form.sku && `SKU: ${form.sku}`, form.ean && `EAN: ${form.ean}`].filter(Boolean).join(' · ')}
             </div>
-            {!isNew && <GS1Button product={form} />}
           </div>
         </div>
 
@@ -200,49 +197,12 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
               <InputWithCopy value={form.sku} onChange={(e) => set('sku', e.target.value)} placeholder="Ex: CX-ORG-10L" />
             </Field>
             <Field label="EAN / GTIN" icon={<BarChart2 size={14} />}
-              hint={
-                eanStatus === 'valid' ? (
-                  <span>
-                    ✅ EAN válido ({eanResult?.length} dígitos) —{' '}
-                    <span
-                      onClick={() => openGS1Portal(form.ean)}
-                      style={{ color: 'var(--color-primary)', cursor: 'pointer', textDecoration: 'underline' }}
-                    >
-                      Verificar cadastro no portal GS1 ↗
-                    </span>
-                  </span>
-                ) :
-                eanStatus === 'invalid' && eanResult?.reason === 'length' ?
-                  `❌ EAN deve ter 8, 12, 13 ou 14 dígitos (tem ${eanResult?.length})` :
-                eanStatus === 'invalid' ?
-                  `❌ Dígito verificador incorreto (esperado: ${eanResult?.expected}, tem: ${eanResult?.got})` :
-                null
-              }>
-              <div style={{ display: 'flex', gap: 6 }}>
+              hint={eanValidation}>
+              <div className="copy-field-wrap" style={{ display: 'flex', gap: 6 }}>
                 <input className="input" value={form.ean}
-                  onChange={(e) => { set('ean', e.target.value); setEanStatus('idle'); setEanResult(null) }}
+                  onChange={(e) => set('ean', e.target.value.replace(/\D/g, '').slice(0, 14))}
                   placeholder="7891234567890" maxLength={14} style={{ flex: 1 }} />
                 {form.ean && <CopyIconButton value={form.ean} />}
-                {form.ean && (
-                  <button
-                    onClick={handleVerifyEAN}
-                    title="Validar checksum do EAN"
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 5,
-                      padding: '0 12px', borderRadius: 8, border: '1.5px solid var(--color-border)',
-                      background: eanStatus === 'valid' ? '#E6F7F0' : eanStatus === 'invalid' ? '#FFEBEB' : '#F0F7FF',
-                      color: eanStatus === 'valid' ? '#1B7F32' : eanStatus === 'invalid' ? '#C73539' : 'var(--color-primary)',
-                      cursor: 'pointer',
-                      fontFamily: 'var(--font-family)', fontSize: 12, fontWeight: 700,
-                      whiteSpace: 'nowrap', transition: 'all 0.15s', flexShrink: 0,
-                    }}
-                  >
-                    {eanStatus === 'valid'   ? <CheckCircle size={13} />
-                   : eanStatus === 'invalid' ? <XCircle size={13} />
-                   : <ShieldCheck size={13} />}
-                    {eanStatus === 'valid' ? 'EAN válido' : eanStatus === 'invalid' ? 'Inválido' : 'Validar EAN'}
-                  </button>
-                )}
               </div>
             </Field>
           </Row>
@@ -271,9 +231,10 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
                   onChange={(e) => handleDriveChange(e.target.value)}
                   placeholder="https://drive.google.com/drive/folders/..." />
                 {thumbStatus === 'loading' && (
-                  <Loader size={14} style={{ position: 'absolute', right: 12, top: '50%',
-                    transform: 'translateY(-50%)', color: 'var(--color-text-soft)',
-                    animation: 'spin 1s linear infinite' }} />
+                  <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
+                    width: 14, height: 14, borderRadius: '50%', border: '2px solid var(--color-border)',
+                    borderTopColor: 'var(--color-primary)', display: 'inline-block',
+                    animation: 'spin 0.7s linear infinite' }} />
                 )}
                 {thumbStatus === 'found' && (
                   <CheckCircle size={14} style={{ position: 'absolute', right: 12, top: '50%',
