@@ -1,30 +1,51 @@
 /**
  * Serverless proxy: GET /api/gs1-verify?ean=7891234567890
  * Evita CORS fazendo a chamada GS1 server-side.
+ *
+ * Auth correta (conforme manual GS1 Brasil, 29/11/2024):
+ *  POST /oauth/access-token
+ *  Authorization: Basic base64(clientId:clientSecret)
+ *  Content-Type: application/json
+ *  Body: { grant_type: "password", username, password }
+ *
+ * Consulta produto:
+ *  GET /gs1/v2/products/{gtin}
+ *  Authorization: Basic base64(clientId:clientSecret)
+ *  client_id: <clientId>
+ *  access_token: <token>
  */
 
-const GS1_AUTH_URL    = 'https://api.gs1br.org/oauth/token'
-const GS1_PRODUCT_URL = 'https://api.gs1br.org/v1/products'
-const GS1_CNP_URL     = 'https://api.gs1br.org/provider/v2/verified'
+const GS1_HOST      = 'https://api.gs1br.org'
+const GS1_AUTH_URL  = `${GS1_HOST}/oauth/access-token`
+const GS1_PROD_URL  = `${GS1_HOST}/gs1/v2/products`
 
-async function getToken() {
+function basicAuth(clientId, clientSecret) {
+  const encoded = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
+  return `Basic ${encoded}`
+}
+
+async function getToken(clientId, clientSecret, username, password) {
   const res = await fetch(GS1_AUTH_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type:    'password',
-      client_id:     process.env.VITE_GS1_CLIENT_ID,
-      client_secret: process.env.VITE_GS1_CLIENT_SECRET,
-      username:      process.env.VITE_GS1_EMAIL,
-      password:      process.env.VITE_GS1_PASSWORD,
-      scope:         'openid',
+    headers: {
+      'Authorization': basicAuth(clientId, clientSecret),
+      'Content-Type':  'application/json',
+    },
+    body: JSON.stringify({
+      grant_type: 'password',
+      username,
+      password,
     }),
   })
+
+  const txt = await res.text()
   if (!res.ok) {
-    const txt = await res.text()
-    throw new Error(`GS1 auth falhou: ${res.status} — ${txt.slice(0, 200)}`)
+    throw new Error(`GS1 auth falhou: ${res.status} — ${txt.slice(0, 300)}`)
   }
-  const data = await res.json()
+
+  let data
+  try { data = JSON.parse(txt) } catch { throw new Error(`GS1 auth: resposta inválida — ${txt.slice(0, 200)}`) }
+
   if (!data.access_token) throw new Error(`Token não retornado: ${JSON.stringify(data).slice(0, 200)}`)
   return data.access_token
 }
@@ -35,43 +56,45 @@ export default async function handler(req, res) {
   const ean = req.query.ean
   if (!ean) return res.status(400).json({ error: 'Parâmetro ean obrigatório.' })
 
-  const gtin = ean.replace(/\D/g, '')
+  // GTIN deve ter 14 dígitos (pad left com zeros)
+  const rawGtin = ean.replace(/\D/g, '')
+  const gtin    = rawGtin.padStart(14, '0')
+
+  const clientId     = process.env.VITE_GS1_CLIENT_ID
+  const clientSecret = process.env.VITE_GS1_CLIENT_SECRET
+  const username     = process.env.VITE_GS1_EMAIL
+  const password     = process.env.VITE_GS1_PASSWORD
+
+  if (!clientId || !clientSecret || !username || !password) {
+    return res.status(500).json({ error: 'Credenciais GS1 não configuradas no servidor.' })
+  }
 
   try {
-    const token = await getToken()
+    const token = await getToken(clientId, clientSecret, username, password)
 
-    // 1) Produtos cadastrados na conta do usuário
-    const ownRes = await fetch(`${GS1_PRODUCT_URL}/${gtin}`, {
-      headers: { Authorization: `Bearer ${token}` },
+    const prodRes = await fetch(`${GS1_PROD_URL}/${gtin}`, {
+      headers: {
+        'Authorization': basicAuth(clientId, clientSecret),
+        'client_id':     clientId,
+        'access_token':  token,
+        'Content-Type':  'application/json',
+      },
     })
 
-    if (ownRes.ok) {
-      const data = await ownRes.json()
+    if (prodRes.ok) {
+      const data = await prodRes.json()
       return res.status(200).json({ found: true, source: 'own', product: data })
     }
 
-    if (ownRes.status === 404) {
-      // 2) Fallback: CNP público
-      const cnpRes = await fetch(`${GS1_CNP_URL}?gtin=${gtin}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-
-      if (cnpRes.ok) {
-        const cnpData = await cnpRes.json()
-        const found = Array.isArray(cnpData) ? cnpData.length > 0 : !!cnpData?.gtin
-        return res.status(200).json({
-          found,
-          source: 'cnp',
-          product: found ? (Array.isArray(cnpData) ? cnpData[0] : cnpData) : null,
-        })
-      }
-
+    if (prodRes.status === 404) {
       return res.status(200).json({ found: false, source: 'own' })
     }
 
-    // Outro erro no endpoint de produtos
-    const errTxt = await ownRes.text()
-    return res.status(ownRes.status).json({ error: `GS1 erro ${ownRes.status}`, details: errTxt.slice(0, 300) })
+    const errTxt = await prodRes.text()
+    return res.status(prodRes.status).json({
+      error:   `GS1 erro ${prodRes.status}`,
+      details: errTxt.slice(0, 300),
+    })
 
   } catch (e) {
     return res.status(500).json({ error: e.message })
