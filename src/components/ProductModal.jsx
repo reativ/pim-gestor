@@ -5,6 +5,7 @@ import { CopyIconButton } from './CopyButton'
 import { create, update, remove } from '../lib/db'
 import { getFirstImageFromFolder, hasGoogleApiKey, extractFolderId } from '../lib/driveApi'
 import { validateGTINChecksum } from '../lib/gs1'
+import GS1Button from './GS1Button'
 import { Image, Youtube, Video, BarChart2, Hash, Tag, DollarSign, ExternalLink, CheckCircle } from 'lucide-react'
 
 const EMPTY = {
@@ -204,6 +205,14 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
                   placeholder="7891234567890" maxLength={14} style={{ flex: 1 }} />
                 {form.ean && <CopyIconButton value={form.ean} />}
               </div>
+              {!form.ean && (
+                <div style={{ marginTop: 6 }}>
+                  <GS1Button
+                    product={form}
+                    onGenerated={(gtin) => set('ean', gtin)}
+                  />
+                </div>
+              )}
             </Field>
           </Row>
           <Row>
