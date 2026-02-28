@@ -50,6 +50,43 @@ const getToken = async () => {
   return tokenCache.token
 }
 
+// ── Verificar EAN na conta GS1 do usuário ────────────────
+export const verifyEAN = async (ean) => {
+  if (!ean) throw new Error('EAN não informado.')
+  const gtin = ean.replace(/\D/g, '')
+  const token = await getToken()
+
+  // 1) Tenta buscar nas próprias produções cadastradas pelo usuário
+  const res = await fetch(`${GS1_PRODUCT_URL}/${gtin}`, {
+    headers: { 'Authorization': `Bearer ${token}` },
+  })
+
+  if (res.ok) {
+    const data = await res.json()
+    return { found: true, source: 'own', product: data }
+  }
+
+  if (res.status === 404) {
+    return { found: false, source: 'own' }
+  }
+
+  // 2) Fallback: consulta pública no CNP (Cadastro Nacional de Produtos)
+  const cnpRes = await fetch(
+    `https://api.gs1br.org/provider/v2/verified?gtin=${gtin}`,
+    { headers: { 'Authorization': `Bearer ${token}` } }
+  )
+
+  if (cnpRes.ok) {
+    const cnpData = await cnpRes.json()
+    const found = Array.isArray(cnpData) ? cnpData.length > 0 : !!cnpData?.gtin
+    return { found, source: 'cnp', product: found ? (Array.isArray(cnpData) ? cnpData[0] : cnpData) : null }
+  }
+
+  // Retorna o status bruto para diagnóstico
+  const errText = await res.text()
+  throw new Error(`GS1 verificação falhou: ${res.status} — ${errText.slice(0, 200)}`)
+}
+
 // ── Registrar produto na GS1 ──────────────────────────────
 export const registerProduct = async (product) => {
   const { nome, sku, ncm, ean } = product

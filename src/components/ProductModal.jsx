@@ -5,7 +5,8 @@ import GS1Button from './GS1Button'
 import { CopyIconButton } from './CopyButton'
 import { create, update, remove } from '../lib/db'
 import { getFirstImageFromFolder, hasGoogleApiKey, extractFolderId } from '../lib/driveApi'
-import { Image, Youtube, Video, BarChart2, Hash, Tag, DollarSign, ExternalLink, Loader, CheckCircle } from 'lucide-react'
+import { verifyEAN } from '../lib/gs1'
+import { Image, Youtube, Video, BarChart2, Hash, Tag, DollarSign, ExternalLink, Loader, CheckCircle, XCircle, ShieldCheck } from 'lucide-react'
 
 const EMPTY = {
   nome: '', sku: '', ncm: '', cest: '', ean: '',
@@ -60,6 +61,8 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [error, setError]       = useState('')
   const [thumbStatus, setThumbStatus] = useState('idle') // idle | loading | found | notfound
+  const [eanStatus, setEanStatus]     = useState('idle') // idle | loading | found | notfound | error
+  const [eanResult, setEanResult]     = useState(null)   // { found, source, product }
   const driveDebounce = useRef(null)
 
   const set = (field, value) => setForm((f) => ({ ...f, [field]: value }))
@@ -88,6 +91,19 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
         setTimeout(() => setThumbStatus('idle'), 3000)
       }
     }, 800)
+  }
+
+  const handleVerifyEAN = async () => {
+    if (!form.ean) return
+    setEanStatus('loading'); setEanResult(null)
+    try {
+      const result = await verifyEAN(form.ean)
+      setEanResult(result)
+      setEanStatus(result.found ? 'found' : 'notfound')
+    } catch (e) {
+      setEanResult({ error: e.message })
+      setEanStatus('error')
+    }
   }
 
   const handleSave = async () => {
@@ -189,8 +205,45 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
             <Field label="SKU" icon={<Hash size={14} />}>
               <InputWithCopy value={form.sku} onChange={(e) => set('sku', e.target.value)} placeholder="Ex: CX-ORG-10L" />
             </Field>
-            <Field label="EAN / GTIN" icon={<BarChart2 size={14} />}>
-              <InputWithCopy value={form.ean} onChange={(e) => set('ean', e.target.value)} placeholder="7891234567890" maxLength={14} />
+            <Field label="EAN / GTIN" icon={<BarChart2 size={14} />}
+              hint={
+                eanStatus === 'loading'  ? '🔍 Consultando GS1...' :
+                eanStatus === 'found'    ? `✅ ${eanResult?.source === 'cnp' ? 'EAN encontrado no CNP GS1' : 'EAN cadastrado na sua conta GS1'}` :
+                eanStatus === 'notfound' ? '⚠️ EAN não encontrado na GS1' :
+                eanStatus === 'error'    ? `❌ ${eanResult?.error || 'Erro ao consultar GS1'}` :
+                null
+              }>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input className="input" value={form.ean}
+                  onChange={(e) => { set('ean', e.target.value); setEanStatus('idle'); setEanResult(null) }}
+                  placeholder="7891234567890" maxLength={14} style={{ flex: 1 }} />
+                {form.ean && <CopyIconButton value={form.ean} />}
+                {form.ean && (
+                  <button
+                    onClick={handleVerifyEAN}
+                    disabled={eanStatus === 'loading'}
+                    title="Verificar EAN no GS1"
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 5,
+                      padding: '0 12px', borderRadius: 8, border: '1.5px solid var(--color-border)',
+                      background: eanStatus === 'found' ? '#E6F7F0' : eanStatus === 'notfound' ? '#FFF8E6' : eanStatus === 'error' ? '#FFEBEB' : '#F0F7FF',
+                      color: eanStatus === 'found' ? '#1B7F32' : eanStatus === 'notfound' ? '#B06000' : eanStatus === 'error' ? '#C73539' : 'var(--color-primary)',
+                      cursor: eanStatus === 'loading' ? 'not-allowed' : 'pointer',
+                      fontFamily: 'var(--font-family)', fontSize: 12, fontWeight: 700,
+                      whiteSpace: 'nowrap', transition: 'all 0.15s', flexShrink: 0,
+                    }}
+                  >
+                    {eanStatus === 'loading'
+                      ? <Loader size={13} style={{ animation: 'spin 1s linear infinite' }} />
+                      : eanStatus === 'found'    ? <CheckCircle size={13} />
+                      : eanStatus === 'notfound' ? <XCircle size={13} />
+                      : eanStatus === 'error'    ? <XCircle size={13} />
+                      : <ShieldCheck size={13} />
+                    }
+                    {eanStatus === 'loading' ? 'Verificando...' : 'Verificar GS1'}
+                  </button>
+                )}
+              </div>
             </Field>
           </Row>
           <Row>
