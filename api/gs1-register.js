@@ -1,40 +1,37 @@
 /**
  * Serverless proxy: POST /api/gs1-register
- * Body: { nome, ncm, cest }
+ * Body: { nome, marca, ncm, cest, gpc, imagemURL }
  *
- * Envia produto SEM GTIN para o GS1 — o GS1 gera e retorna o GTIN.
+ * Auth correta (via Code.gs funcional):
+ *   POST /autenticacao/api/token
+ *   Content-Type: application/json
+ *   Body: { email, password, client_id, client_secret }
+ *   → retorna { access_token }
  *
- * Auth (manual GS1 Brasil 29/11/2024):
- *  POST /oauth/access-token
- *  Authorization: Basic base64(clientId:clientSecret)
- *  Content-Type: application/json
- *  Body: { grant_type: "password", username, password }
- *
- * Cadastro:
- *  POST /gs1/v2/products
- *  Authorization: Basic base64(clientId:clientSecret)
- *  client_id, access_token headers
+ * Cadastro produto:
+ *   POST /v2/products
+ *   Authorization: Bearer <token>
  */
 
 const GS1_HOST     = 'https://api.gs1br.org'
-const GS1_AUTH_URL = `${GS1_HOST}/oauth/access-token`
-const GS1_PROD_URL = `${GS1_HOST}/gs1/v2/products`
+const GS1_AUTH_URL = `${GS1_HOST}/autenticacao/api/token`
+const GS1_PROD_URL = `${GS1_HOST}/v2/products`
 
-function basicAuth(clientId, clientSecret) {
-  return 'Basic ' + Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
-}
-
-async function getToken(clientId, clientSecret, username, password) {
+async function getToken(clientId, clientSecret, email, password) {
   const res = await fetch(GS1_AUTH_URL, {
     method: 'POST',
-    headers: {
-      'Authorization': basicAuth(clientId, clientSecret),
-      'Content-Type':  'application/json',
-    },
-    body: JSON.stringify({ grant_type: 'password', username, password }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email,
+      password,
+      client_id:     clientId,
+      client_secret: clientSecret,
+    }),
   })
+
   const txt = await res.text()
   if (!res.ok) throw new Error(`GS1 auth falhou: ${res.status} — ${txt.slice(0, 300)}`)
+
   const data = JSON.parse(txt)
   if (!data.access_token) throw new Error(`Token não retornado: ${JSON.stringify(data).slice(0, 200)}`)
   return data.access_token
@@ -43,51 +40,62 @@ async function getToken(clientId, clientSecret, username, password) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const { nome, ncm, cest } = req.body || {}
+  const { nome, marca, ncm, cest, gpc, imagemURL } = req.body || {}
   if (!nome) return res.status(400).json({ error: 'Nome do produto é obrigatório.' })
 
   const clientId     = process.env.VITE_GS1_CLIENT_ID
   const clientSecret = process.env.VITE_GS1_CLIENT_SECRET
-  const username     = process.env.VITE_GS1_EMAIL
+  const email        = process.env.VITE_GS1_EMAIL
   const password     = process.env.VITE_GS1_PASSWORD
   const cad          = process.env.VITE_GS1_CAD
 
-  if (!clientId || !clientSecret || !username || !password) {
+  if (!clientId || !clientSecret || !email || !password) {
     return res.status(500).json({ error: 'Credenciais GS1 não configuradas no servidor.' })
   }
 
   try {
-    const token = await getToken(clientId, clientSecret, username, password)
+    const token = await getToken(clientId, clientSecret, email, password)
 
-    // Monta body mínimo para geração de novo GTIN_13
     const payload = {
       company: { cad: cad || '' },
-      gtinStatusCode: 'ACTIVE',
-      gs1TradeItemIdentificationKey: {
-        gs1TradeItemIdentificationKeyCode: 'GTIN_13',
+      acceptResponsibility: true,
+      shareDataIndicator:   true,
+      withoutCest: !cest,
+      tradeItem: {
+        targetMarket: { targetMarketCountryCodes: ['076'] },
+        tradeItemUnitDescriptorCode: 'BASE_UNIT_OR_EACH',
+      },
+      placeOfProductActivity: {
+        countryOfOrigin: { countryCode: '076' },
       },
       tradeItemDescriptionInformationLang: [{
+        languageCode:        'pt-BR',
         tradeItemDescription: nome,
-        languageCode: 'pt-BR',
-        default: true,
       }],
-      shareDataIndicator: true,
-      ...(ncm || cest ? {
-        tradeItemClassification: {
-          additionalTradeItemClassifications: [
-            ...(ncm ? [{ additionalTradeItemClassificationSystemCode: 'NCM', additionalTradeItemClassificationCodeValue: ncm }] : []),
-            ...(cest ? [{ additionalTradeItemClassificationSystemCode: 'CEST', additionalTradeItemClassificationCodeValue: cest }] : []),
-          ],
-        },
+      brandNameInformationLang: [{
+        languageCode: 'pt-BR',
+        brandName:    marca || nome,
+      }],
+      tradeItemClassification: {
+        gpcCategoryCode: gpc || undefined,
+        additionalTradeItemClassifications: [
+          ...(ncm  ? [{ additionalTradeItemClassificationSystemCode: 'NCM',  additionalTradeItemClassificationCodeValue: ncm  }] : []),
+          ...(cest ? [{ additionalTradeItemClassificationSystemCode: 'CEST', additionalTradeItemClassificationCodeValue: cest }] : []),
+        ],
+      },
+      ...(imagemURL ? {
+        referencedFileInformations: [{
+          languageCode:              'pt-BR',
+          uniformResourceIdentifier: imagemURL,
+          referencedFileTypeCode:    'OUT_OF_PACKAGE_IMAGE',
+        }],
       } : {}),
     }
 
     const gsRes = await fetch(GS1_PROD_URL, {
-      method: 'POST',
+      method:  'POST',
       headers: {
-        'Authorization': basicAuth(clientId, clientSecret),
-        'client_id':     clientId,
-        'access_token':  token,
+        'Authorization': `Bearer ${token}`,
         'Content-Type':  'application/json',
       },
       body: JSON.stringify(payload),
@@ -97,21 +105,18 @@ export default async function handler(req, res) {
     let data
     try { data = JSON.parse(txt) } catch { data = { raw: txt } }
 
-    if (!gsRes.ok) {
-      return res.status(gsRes.status).json({
-        error: data?.message || data?.error_description || `Erro ${gsRes.status}`,
-        details: txt.slice(0, 500),
-      })
+    if ((gsRes.status === 200 || gsRes.status === 201) && data?.result === 'SUCCESS') {
+      const gtin =
+        data?.product?.gs1TradeItemIdentificationKey?.gtin ||
+        data?.product?.gs1TradeItemIdentificationKey?.fixedLengthGtin ||
+        null
+      return res.status(200).json({ gtin, status: data?.product?.gtinStatusCode })
     }
 
-    // Extrai o GTIN gerado da resposta
-    const gtin =
-      data?.product?.gs1TradeItemIdentificationKey?.gtin ||
-      data?.gs1TradeItemIdentificationKey?.gtin ||
-      data?.gtin ||
-      null
-
-    return res.status(200).json({ gtin, raw: data })
+    return res.status(gsRes.status).json({
+      error:   data?.message || data?.errors?.[0]?.message || `Erro ${gsRes.status}`,
+      details: txt.slice(0, 500),
+    })
 
   } catch (e) {
     return res.status(500).json({ error: e.message })

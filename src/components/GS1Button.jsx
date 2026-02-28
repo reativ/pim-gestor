@@ -20,9 +20,11 @@ export default function GS1Button({ product, onGenerated }) {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
-          nome: product.nome,
-          ncm:  product.ncm,
-          cest: product.cest,
+          nome:      product.nome,
+          marca:     product.sku || product.nome,
+          ncm:       product.ncm,
+          cest:      product.cest,
+          imagemURL: product.thumbnail || undefined,
         }),
       })
 
