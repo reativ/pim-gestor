@@ -5,8 +5,8 @@ import GS1Button from './GS1Button'
 import { CopyIconButton } from './CopyButton'
 import { create, update, remove } from '../lib/db'
 import { getFirstImageFromFolder, hasGoogleApiKey, extractFolderId } from '../lib/driveApi'
-import { verifyEAN } from '../lib/gs1'
-import { Image, Youtube, Video, BarChart2, Hash, Tag, DollarSign, ExternalLink, Loader, CheckCircle, XCircle, ShieldCheck } from 'lucide-react'
+import { verifyEAN, openGS1Portal } from '../lib/gs1'
+import { Image, Youtube, Video, BarChart2, Hash, Tag, DollarSign, ExternalLink, CheckCircle, XCircle, ShieldCheck } from 'lucide-react'
 
 const EMPTY = {
   nome: '', sku: '', ncm: '', cest: '', ean: '',
@@ -93,17 +93,11 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
     }, 800)
   }
 
-  const handleVerifyEAN = async () => {
+  const handleVerifyEAN = () => {
     if (!form.ean) return
-    setEanStatus('loading'); setEanResult(null)
-    try {
-      const result = await verifyEAN(form.ean)
-      setEanResult(result)
-      setEanStatus(result.found ? 'found' : 'notfound')
-    } catch (e) {
-      setEanResult({ error: e.message })
-      setEanStatus('error')
-    }
+    const result = verifyEAN(form.ean)
+    setEanResult(result)
+    setEanStatus(result.valid ? 'valid' : 'invalid')
   }
 
   const handleSave = async () => {
@@ -207,10 +201,21 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
             </Field>
             <Field label="EAN / GTIN" icon={<BarChart2 size={14} />}
               hint={
-                eanStatus === 'loading'  ? '🔍 Consultando GS1...' :
-                eanStatus === 'found'    ? `✅ ${eanResult?.source === 'cnp' ? 'EAN encontrado no CNP GS1' : 'EAN cadastrado na sua conta GS1'}` :
-                eanStatus === 'notfound' ? '⚠️ EAN não encontrado na GS1' :
-                eanStatus === 'error'    ? `❌ ${eanResult?.error || 'Erro ao consultar GS1'}` :
+                eanStatus === 'valid' ? (
+                  <span>
+                    ✅ EAN válido ({eanResult?.length} dígitos) —{' '}
+                    <span
+                      onClick={() => openGS1Portal(form.ean)}
+                      style={{ color: 'var(--color-primary)', cursor: 'pointer', textDecoration: 'underline' }}
+                    >
+                      Verificar cadastro no portal GS1 ↗
+                    </span>
+                  </span>
+                ) :
+                eanStatus === 'invalid' && eanResult?.reason === 'length' ?
+                  `❌ EAN deve ter 8, 12, 13 ou 14 dígitos (tem ${eanResult?.length})` :
+                eanStatus === 'invalid' ?
+                  `❌ Dígito verificador incorreto (esperado: ${eanResult?.expected}, tem: ${eanResult?.got})` :
                 null
               }>
               <div style={{ display: 'flex', gap: 6 }}>
@@ -221,26 +226,21 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
                 {form.ean && (
                   <button
                     onClick={handleVerifyEAN}
-                    disabled={eanStatus === 'loading'}
-                    title="Verificar EAN no GS1"
+                    title="Validar checksum do EAN"
                     style={{
                       display: 'flex', alignItems: 'center', gap: 5,
                       padding: '0 12px', borderRadius: 8, border: '1.5px solid var(--color-border)',
-                      background: eanStatus === 'found' ? '#E6F7F0' : eanStatus === 'notfound' ? '#FFF8E6' : eanStatus === 'error' ? '#FFEBEB' : '#F0F7FF',
-                      color: eanStatus === 'found' ? '#1B7F32' : eanStatus === 'notfound' ? '#B06000' : eanStatus === 'error' ? '#C73539' : 'var(--color-primary)',
-                      cursor: eanStatus === 'loading' ? 'not-allowed' : 'pointer',
+                      background: eanStatus === 'valid' ? '#E6F7F0' : eanStatus === 'invalid' ? '#FFEBEB' : '#F0F7FF',
+                      color: eanStatus === 'valid' ? '#1B7F32' : eanStatus === 'invalid' ? '#C73539' : 'var(--color-primary)',
+                      cursor: 'pointer',
                       fontFamily: 'var(--font-family)', fontSize: 12, fontWeight: 700,
                       whiteSpace: 'nowrap', transition: 'all 0.15s', flexShrink: 0,
                     }}
                   >
-                    {eanStatus === 'loading'
-                      ? <Loader size={13} style={{ animation: 'spin 1s linear infinite' }} />
-                      : eanStatus === 'found'    ? <CheckCircle size={13} />
-                      : eanStatus === 'notfound' ? <XCircle size={13} />
-                      : eanStatus === 'error'    ? <XCircle size={13} />
-                      : <ShieldCheck size={13} />
-                    }
-                    {eanStatus === 'loading' ? 'Verificando...' : 'Verificar GS1'}
+                    {eanStatus === 'valid'   ? <CheckCircle size={13} />
+                   : eanStatus === 'invalid' ? <XCircle size={13} />
+                   : <ShieldCheck size={13} />}
+                    {eanStatus === 'valid' ? 'EAN válido' : eanStatus === 'invalid' ? 'Inválido' : 'Validar EAN'}
                   </button>
                 )}
               </div>
