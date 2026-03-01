@@ -11,7 +11,7 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
   const {
-    nome, ncm, gpcCategoryCode, imagemURL,
+    nome, ncm, cest, gpcCategoryCode, imagemURL,
     pesoBruto, pesoLiquido, conteudoLiquido, origem,
   } = req.body || {}
   if (!nome) return res.status(400).json({ error: 'Nome do produto é obrigatório.' })
@@ -29,7 +29,7 @@ export default async function handler(req, res) {
         'X-Worker-Secret': workerSecret || '',
       },
       body: JSON.stringify({
-        nome, ncm, gpcCategoryCode, imagemURL,
+        nome, ncm, cest, gpcCategoryCode, imagemURL,
         pesoBruto, pesoLiquido, conteudoLiquido, origem,
       }),
     })

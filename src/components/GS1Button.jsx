@@ -24,6 +24,7 @@ export default function GS1Button({ product, onGenerated }) {
           // marca sempre "Morini" — padrão da empresa
           gpcCategoryCode: product.gpc_code           || undefined,
           ncm:             product.ncm                 || undefined,
+          cest:            product.cest                || undefined,
           pesoBruto:       product.peso_bruto           ? Number(product.peso_bruto)           : undefined,
           pesoLiquido:     product.peso_liquido         ? Number(product.peso_liquido)         : undefined,
           conteudoLiquido: product.conteudo_liquido     ? Number(product.conteudo_liquido)     : undefined,
