@@ -6,11 +6,13 @@ import { create, update, remove } from '../lib/db'
 import { getFirstImageFromFolder, hasGoogleApiKey, extractFolderId } from '../lib/driveApi'
 import { validateGTINChecksum } from '../lib/gs1'
 import GS1Button from './GS1Button'
-import { Image, Youtube, Video, BarChart2, Hash, Tag, DollarSign, ExternalLink, CheckCircle } from 'lucide-react'
+import { Image, Youtube, Video, BarChart2, Hash, Tag, DollarSign, ExternalLink, CheckCircle, Weight, Globe } from 'lucide-react'
 
 const EMPTY = {
   nome: '', sku: '', ncm: '', cest: '', ean: '',
   custo: '', fotos_drive: '', thumbnail: '', video_ml: '', video_shopee: '',
+  // Campos GS1
+  gpc_code: '', peso_bruto: '', peso_liquido: '', conteudo_liquido: '', origem: '076',
 }
 
 function Section({ title, children }) {
@@ -228,6 +230,45 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
           <Field label="Custo" icon={<DollarSign size={14} />}>
             <InputWithCopy value={form.custo} type="number" step="0.01" min="0"
               onChange={(e) => set('custo', e.target.value)} placeholder="0,00" style={{ maxWidth: 180 }} />
+          </Field>
+        </Section>
+
+        {/* GS1 / Logística */}
+        <Section title="GS1 / Logística">
+          <Row>
+            <Field label="País de Origem" icon={<Globe size={14} />}>
+              <select className="input" value={form.origem} onChange={(e) => set('origem', e.target.value)}
+                style={{ cursor: 'pointer' }}>
+                <option value="076">🇧🇷 Brasil</option>
+                <option value="156">🇨🇳 China</option>
+              </select>
+            </Field>
+            <Field label="Código GPC" icon={<Hash size={14} />}
+              hint={<>Categoria GS1. <a href="https://www.gs1br.org/servicos/gpc" target="_blank" rel="noreferrer" style={{ color: 'var(--color-primary)' }}>Buscar código</a></>}>
+              <InputWithCopy value={form.gpc_code}
+                onChange={(e) => set('gpc_code', e.target.value.replace(/\D/g, '').slice(0, 8))}
+                placeholder="Ex: 10000003" maxLength={8} />
+            </Field>
+          </Row>
+          <Row>
+            <Field label="Peso Bruto (g)" icon={<Weight size={14} />}
+              hint="Com embalagem">
+              <input className="input" type="number" min="0" step="1" value={form.peso_bruto}
+                onChange={(e) => set('peso_bruto', e.target.value)}
+                placeholder="Ex: 150" />
+            </Field>
+            <Field label="Peso Líquido (g)" icon={<Weight size={14} />}
+              hint="Sem embalagem">
+              <input className="input" type="number" min="0" step="1" value={form.peso_liquido}
+                onChange={(e) => set('peso_liquido', e.target.value)}
+                placeholder="Ex: 100" />
+            </Field>
+          </Row>
+          <Field label="Conteúdo Líquido (g)" icon={<Weight size={14} />}
+            hint="Quantidade declarada na embalagem" style={{ maxWidth: 220 }}>
+            <input className="input" type="number" min="0" step="1" value={form.conteudo_liquido}
+              onChange={(e) => set('conteudo_liquido', e.target.value)}
+              placeholder="Ex: 100" style={{ maxWidth: 220 }} />
           </Field>
         </Section>
 

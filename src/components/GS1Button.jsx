@@ -20,11 +20,15 @@ export default function GS1Button({ product, onGenerated }) {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
-          nome:      product.nome,
-          marca:     product.sku || product.nome,
-          ncm:       product.ncm,
-          cest:      product.cest,
-          imagemURL: product.thumbnail || undefined,
+          nome:            product.nome,
+          // marca sempre "Morini" — padrão da empresa
+          gpcCategoryCode: product.gpc_code           || undefined,
+          ncm:             product.ncm                 || undefined,
+          pesoBruto:       product.peso_bruto           ? Number(product.peso_bruto)           : undefined,
+          pesoLiquido:     product.peso_liquido         ? Number(product.peso_liquido)         : undefined,
+          conteudoLiquido: product.conteudo_liquido     ? Number(product.conteudo_liquido)     : undefined,
+          origem:          product.origem               || '076',
+          imagemURL:       product.thumbnail            || undefined,
         }),
       })
 

@@ -9,12 +9,27 @@ const LS_KEY = 'pim_products'
 const lsLoad = () => { try { return JSON.parse(localStorage.getItem(LS_KEY) || '[]') } catch { return [] } }
 const lsSave = (p) => localStorage.setItem(LS_KEY, JSON.stringify(p))
 
+// Colunas base — sempre existem na tabela
+const CORE_COLS = ['nome','sku','ncm','cest','ean','custo','fotos_drive','thumbnail','video_ml','video_shopee']
+// Colunas GS1 — adicionadas via migration; campos opcionais
+const GS1_COLS  = ['gpc_code','peso_bruto','peso_liquido','conteudo_liquido','origem']
+
 const blank = (data = {}) => ({
   nome: '', sku: '', ncm: '', cest: '', ean: '',
   custo: '', fotos_drive: '', thumbnail: '',
   video_ml: '', video_shopee: '',
+  // GS1 — ficam vazios por padrão, preenchidos quando migration rodar
+  gpc_code: '', peso_bruto: '', peso_liquido: '', conteudo_liquido: '', origem: '076',
   ...data,
 })
+
+// Retorna o payload sem as colunas GS1 (fallback antes da migration)
+const withoutGs1 = (obj) =>
+  Object.fromEntries(Object.entries(obj).filter(([k]) => !GS1_COLS.includes(k)))
+
+// Verifica se o erro é "coluna não existe" (migration pendente)
+const isMissingColumnError = (err) =>
+  err?.code === 'PGRST204' || err?.message?.includes('does not exist')
 
 export const getAll = async () => {
   if (hasSupabase) {
@@ -28,8 +43,14 @@ export const getAll = async () => {
 
 export const create = async (data) => {
   if (hasSupabase) {
-    const { data: row, error } = await supabase
-      .from('products').insert([blank(data)]).select().single()
+    const payload = blank(data)
+    let { data: row, error } = await supabase
+      .from('products').insert([payload]).select().single()
+    // Fallback: se migration GS1 ainda não rodou, tenta sem as colunas extras
+    if (error && isMissingColumnError(error)) {
+      const r2 = await supabase.from('products').insert([withoutGs1(payload)]).select().single()
+      row = r2.data; error = r2.error
+    }
     if (error) throw error
     return row
   }
@@ -43,9 +64,14 @@ export const create = async (data) => {
 
 export const update = async (id, data) => {
   if (hasSupabase) {
-    const { data: row, error } = await supabase
-      .from('products').update({ ...data, updated_at: new Date().toISOString() })
-      .eq('id', id).select().single()
+    const payload = { ...data, updated_at: new Date().toISOString() }
+    let { data: row, error } = await supabase
+      .from('products').update(payload).eq('id', id).select().single()
+    // Fallback: se migration GS1 ainda não rodou, tenta sem as colunas extras
+    if (error && isMissingColumnError(error)) {
+      const r2 = await supabase.from('products').update(withoutGs1(payload)).eq('id', id).select().single()
+      row = r2.data; error = r2.error
+    }
     if (error) throw error
     return row
   }
