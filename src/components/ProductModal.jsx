@@ -6,7 +6,7 @@ import { create, update, remove } from '../lib/db'
 import { getFirstImageFromFolder, hasGoogleApiKey, extractFolderId } from '../lib/driveApi'
 import { validateGTINChecksum } from '../lib/gs1'
 import GS1Button from './GS1Button'
-import { Image, Youtube, Video, BarChart2, Hash, Tag, DollarSign, ExternalLink, CheckCircle, Weight, Globe } from 'lucide-react'
+import { Image, Youtube, Video, BarChart2, Hash, Tag, DollarSign, ExternalLink, CheckCircle, Scale, Globe } from 'lucide-react'
 
 const EMPTY = {
   nome: '', sku: '', ncm: '', cest: '', ean: '',
@@ -251,20 +251,20 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
             </Field>
           </Row>
           <Row>
-            <Field label="Peso Bruto (g)" icon={<Weight size={14} />}
+            <Field label="Peso Bruto (g)" icon={<Scale size={14} />}
               hint="Com embalagem">
               <input className="input" type="number" min="0" step="1" value={form.peso_bruto}
                 onChange={(e) => set('peso_bruto', e.target.value)}
                 placeholder="Ex: 150" />
             </Field>
-            <Field label="Peso Líquido (g)" icon={<Weight size={14} />}
+            <Field label="Peso Líquido (g)" icon={<Scale size={14} />}
               hint="Sem embalagem">
               <input className="input" type="number" min="0" step="1" value={form.peso_liquido}
                 onChange={(e) => set('peso_liquido', e.target.value)}
                 placeholder="Ex: 100" />
             </Field>
           </Row>
-          <Field label="Conteúdo Líquido (g)" icon={<Weight size={14} />}
+          <Field label="Conteúdo Líquido (g)" icon={<Scale size={14} />}
             hint="Quantidade declarada na embalagem" style={{ maxWidth: 220 }}>
             <input className="input" type="number" min="0" step="1" value={form.conteudo_liquido}
               onChange={(e) => set('conteudo_liquido', e.target.value)}
