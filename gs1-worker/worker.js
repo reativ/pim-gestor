@@ -158,7 +158,7 @@ export default {
             languageCode:              'pt-BR',
             featuredFile:              true,
             contentDescription:        'Imagem do Produto',
-            fileName:                  imagemFinal.split('/').pop().split('?')[0] || 'produto.jpg',
+            fileName:                  'produto.jpg',
             uniformResourceIdentifier: imagemFinal,
             referencedFileTypeCode:    'OUT_OF_PACKAGE_IMAGE',
           }],
