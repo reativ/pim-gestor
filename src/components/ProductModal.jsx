@@ -4,6 +4,7 @@ import Thumbnail from './Thumbnail'
 import { CopyIconButton } from './CopyButton'
 import { create, update, remove } from '../lib/db'
 import { getFirstImageFromFolder, hasGoogleApiKey, extractFolderId, searchDriveFolders } from '../lib/driveApi'
+import { openFolderPicker, hasPickerSupport } from '../lib/drivePicker'
 import { validateGTINChecksum } from '../lib/gs1'
 import GS1Button from './GS1Button'
 import { Image, Youtube, Video, BarChart2, Hash, Tag, DollarSign, ExternalLink, CheckCircle, Scale, Globe, FolderOpen, Search, Folder } from 'lucide-react'
@@ -71,18 +72,61 @@ function eanHint(ean) {
   return `✅ EAN válido (${result.length} dígitos)`
 }
 
-/** Inline Drive folder picker — shows on click of the folder icon */
+/**
+ * Drive Folder Picker button.
+ * - If VITE_GOOGLE_CLIENT_ID is set → opens native Google Picker (OAuth)
+ * - Otherwise → falls back to inline text search via API key
+ */
 function DriveFolderPicker({ onSelect }) {
-  const [open, setOpen]       = useState(false)
-  const [query, setQuery]     = useState('')
-  const [results, setResults] = useState([])
-  const [loading, setLoading] = useState(false)
-  const [searched, setSearched] = useState(false)
-  const inputRef  = useRef(null)
-  const wrapRef   = useRef(null)
-  const debounce  = useRef(null)
+  const [pickerLoading, setPickerLoading] = useState(false)
 
-  // Close on outside click
+  // ── Native Google Picker (when Client ID is configured) ──────────────────
+  if (hasPickerSupport) {
+    const handleClick = () => {
+      setPickerLoading(true)
+      openFolderPicker(
+        (url) => { onSelect(url); setPickerLoading(false) },
+        ()    => setPickerLoading(false)
+      )
+    }
+    return (
+      <button
+        type="button"
+        title="Selecionar pasta no Google Drive"
+        onClick={handleClick}
+        disabled={pickerLoading}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 5, padding: '0 11px',
+          height: '100%', minHeight: 38,
+          background: '#F0F0F0', borderRadius: 8, border: '1.5px solid var(--color-border)',
+          color: 'var(--color-text-soft)', cursor: pickerLoading ? 'wait' : 'pointer',
+          flexShrink: 0,
+        }}
+      >
+        {pickerLoading
+          ? <span style={{ width: 14, height: 14, borderRadius: '50%',
+              border: '2px solid var(--color-border)', borderTopColor: 'var(--color-primary)',
+              display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
+          : <FolderOpen size={15} />}
+      </button>
+    )
+  }
+
+  // ── Fallback: inline text search via API key ─────────────────────────────
+  return <DriveFolderSearchFallback onSelect={onSelect} />
+}
+
+/** Fallback inline search dropdown (used when no OAuth Client ID is set) */
+function DriveFolderSearchFallback({ onSelect }) {
+  const [open, setOpen]         = useState(false)
+  const [query, setQuery]       = useState('')
+  const [results, setResults]   = useState([])
+  const [loading, setLoading]   = useState(false)
+  const [searched, setSearched] = useState(false)
+  const inputRef = useRef(null)
+  const wrapRef  = useRef(null)
+  const debounce = useRef(null)
+
   useEffect(() => {
     if (!open) return
     const handler = (e) => {
@@ -92,31 +136,23 @@ function DriveFolderPicker({ onSelect }) {
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
-  // Focus input when opened
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 50)
   }, [open])
 
   const handleQuery = (val) => {
-    setQuery(val)
-    setSearched(false)
+    setQuery(val); setSearched(false)
     clearTimeout(debounce.current)
     if (!val.trim()) { setResults([]); return }
     setLoading(true)
     debounce.current = setTimeout(async () => {
       const res = await searchDriveFolders(val)
-      setResults(res)
-      setLoading(false)
-      setSearched(true)
+      setResults(res); setLoading(false); setSearched(true)
     }, 500)
   }
 
   const handlePick = (folder) => {
-    onSelect(folder.url)
-    setOpen(false)
-    setQuery('')
-    setResults([])
-    setSearched(false)
+    onSelect(folder.url); setOpen(false); setQuery(''); setResults([]); setSearched(false)
   }
 
   return (
@@ -126,7 +162,7 @@ function DriveFolderPicker({ onSelect }) {
         title="Buscar pasta no Google Drive"
         onClick={() => setOpen((v) => !v)}
         style={{
-          display: 'flex', alignItems: 'center', gap: 5, padding: '0 11px',
+          display: 'flex', alignItems: 'center', padding: '0 11px',
           height: '100%', minHeight: 38,
           background: open ? 'var(--color-primary)' : '#F0F0F0',
           borderRadius: 8, border: '1.5px solid var(--color-border)',
@@ -142,61 +178,39 @@ function DriveFolderPicker({ onSelect }) {
           position: 'absolute', top: 'calc(100% + 6px)', right: 0,
           width: 300, background: '#fff', borderRadius: 10,
           border: '1.5px solid var(--color-border)',
-          boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 999,
-          overflow: 'hidden',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 999, overflow: 'hidden',
         }}>
-          {/* Search bar */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px',
-            borderBottom: '1px solid var(--color-border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8,
+            padding: '10px 12px', borderBottom: '1px solid var(--color-border)' }}>
             <Search size={14} style={{ color: 'var(--color-text-soft)', flexShrink: 0 }} />
-            <input
-              ref={inputRef}
-              value={query}
-              onChange={(e) => handleQuery(e.target.value)}
+            <input ref={inputRef} value={query} onChange={(e) => handleQuery(e.target.value)}
               placeholder="Buscar pasta no Drive…"
-              style={{
-                flex: 1, border: 'none', outline: 'none', fontSize: 13,
-                fontFamily: 'var(--font-family)', background: 'transparent',
-                color: 'var(--color-text)',
-              }}
-            />
-            {loading && (
-              <span style={{
-                width: 13, height: 13, borderRadius: '50%',
-                border: '2px solid var(--color-border)',
-                borderTopColor: 'var(--color-primary)',
-                display: 'inline-block', animation: 'spin 0.7s linear infinite', flexShrink: 0,
-              }} />
-            )}
+              style={{ flex: 1, border: 'none', outline: 'none', fontSize: 13,
+                fontFamily: 'var(--font-family)', background: 'transparent', color: 'var(--color-text)' }} />
+            {loading && <span style={{ width: 13, height: 13, borderRadius: '50%',
+              border: '2px solid var(--color-border)', borderTopColor: 'var(--color-primary)',
+              display: 'inline-block', animation: 'spin 0.7s linear infinite', flexShrink: 0 }} />}
           </div>
-
-          {/* Results */}
           <div style={{ maxHeight: 220, overflowY: 'auto' }}>
             {!query.trim() && (
-              <div style={{ padding: '20px 12px', textAlign: 'center', color: 'var(--color-text-soft)', fontSize: 12 }}>
+              <div style={{ padding: '20px 12px', textAlign: 'center',
+                color: 'var(--color-text-soft)', fontSize: 12 }}>
                 Digite o nome da pasta para buscar
               </div>
             )}
             {query.trim() && searched && results.length === 0 && !loading && (
-              <div style={{ padding: '20px 12px', textAlign: 'center', color: 'var(--color-text-soft)', fontSize: 12 }}>
+              <div style={{ padding: '20px 12px', textAlign: 'center',
+                color: 'var(--color-text-soft)', fontSize: 12 }}>
                 Nenhuma pasta encontrada
               </div>
             )}
             {results.map((folder) => (
-              <button
-                key={folder.id}
-                type="button"
-                onClick={() => handlePick(folder)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 10,
-                  width: '100%', padding: '9px 12px',
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  textAlign: 'left', borderBottom: '1px solid var(--color-border)',
-                  transition: 'background 0.1s',
-                }}
+              <button key={folder.id} type="button" onClick={() => handlePick(folder)}
+                style={{ display: 'flex', alignItems: 'center', gap: 10,
+                  width: '100%', padding: '9px 12px', background: 'none', border: 'none',
+                  cursor: 'pointer', textAlign: 'left', borderBottom: '1px solid var(--color-border)' }}
                 onMouseEnter={(e) => e.currentTarget.style.background = '#F5F5F5'}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
-              >
+                onMouseLeave={(e) => e.currentTarget.style.background = 'none'}>
                 <Folder size={15} style={{ color: '#FBBC04', flexShrink: 0 }} />
                 <span style={{ fontSize: 13, color: 'var(--color-text)',
                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
