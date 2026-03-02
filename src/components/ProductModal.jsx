@@ -1,12 +1,12 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import Modal from './Modal'
 import Thumbnail from './Thumbnail'
 import { CopyIconButton } from './CopyButton'
 import { create, update, remove } from '../lib/db'
-import { getFirstImageFromFolder, hasGoogleApiKey, extractFolderId } from '../lib/driveApi'
+import { getFirstImageFromFolder, hasGoogleApiKey, extractFolderId, searchDriveFolders } from '../lib/driveApi'
 import { validateGTINChecksum } from '../lib/gs1'
 import GS1Button from './GS1Button'
-import { Image, Youtube, Video, BarChart2, Hash, Tag, DollarSign, ExternalLink, CheckCircle, Scale, Globe } from 'lucide-react'
+import { Image, Youtube, Video, BarChart2, Hash, Tag, DollarSign, ExternalLink, CheckCircle, Scale, Globe, FolderOpen, Search, Folder } from 'lucide-react'
 
 const EMPTY = {
   nome: '', sku: '', ncm: '', cest: '', ean: '',
@@ -69,6 +69,146 @@ function eanHint(ean) {
     return `❌ Dígito verificador incorreto (esperado ${result.expected}, tem ${result.got})`
   }
   return `✅ EAN válido (${result.length} dígitos)`
+}
+
+/** Inline Drive folder picker — shows on click of the folder icon */
+function DriveFolderPicker({ onSelect }) {
+  const [open, setOpen]       = useState(false)
+  const [query, setQuery]     = useState('')
+  const [results, setResults] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [searched, setSearched] = useState(false)
+  const inputRef  = useRef(null)
+  const wrapRef   = useRef(null)
+  const debounce  = useRef(null)
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return
+    const handler = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  // Focus input when opened
+  useEffect(() => {
+    if (open) setTimeout(() => inputRef.current?.focus(), 50)
+  }, [open])
+
+  const handleQuery = (val) => {
+    setQuery(val)
+    setSearched(false)
+    clearTimeout(debounce.current)
+    if (!val.trim()) { setResults([]); return }
+    setLoading(true)
+    debounce.current = setTimeout(async () => {
+      const res = await searchDriveFolders(val)
+      setResults(res)
+      setLoading(false)
+      setSearched(true)
+    }, 500)
+  }
+
+  const handlePick = (folder) => {
+    onSelect(folder.url)
+    setOpen(false)
+    setQuery('')
+    setResults([])
+    setSearched(false)
+  }
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative', flexShrink: 0 }}>
+      <button
+        type="button"
+        title="Buscar pasta no Google Drive"
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 5, padding: '0 11px',
+          height: '100%', minHeight: 38,
+          background: open ? 'var(--color-primary)' : '#F0F0F0',
+          borderRadius: 8, border: '1.5px solid var(--color-border)',
+          color: open ? '#fff' : 'var(--color-text-soft)',
+          cursor: 'pointer', transition: 'background 0.15s, color 0.15s',
+        }}
+      >
+        <FolderOpen size={15} />
+      </button>
+
+      {open && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 6px)', right: 0,
+          width: 300, background: '#fff', borderRadius: 10,
+          border: '1.5px solid var(--color-border)',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 999,
+          overflow: 'hidden',
+        }}>
+          {/* Search bar */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px',
+            borderBottom: '1px solid var(--color-border)' }}>
+            <Search size={14} style={{ color: 'var(--color-text-soft)', flexShrink: 0 }} />
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={(e) => handleQuery(e.target.value)}
+              placeholder="Buscar pasta no Drive…"
+              style={{
+                flex: 1, border: 'none', outline: 'none', fontSize: 13,
+                fontFamily: 'var(--font-family)', background: 'transparent',
+                color: 'var(--color-text)',
+              }}
+            />
+            {loading && (
+              <span style={{
+                width: 13, height: 13, borderRadius: '50%',
+                border: '2px solid var(--color-border)',
+                borderTopColor: 'var(--color-primary)',
+                display: 'inline-block', animation: 'spin 0.7s linear infinite', flexShrink: 0,
+              }} />
+            )}
+          </div>
+
+          {/* Results */}
+          <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+            {!query.trim() && (
+              <div style={{ padding: '20px 12px', textAlign: 'center', color: 'var(--color-text-soft)', fontSize: 12 }}>
+                Digite o nome da pasta para buscar
+              </div>
+            )}
+            {query.trim() && searched && results.length === 0 && !loading && (
+              <div style={{ padding: '20px 12px', textAlign: 'center', color: 'var(--color-text-soft)', fontSize: 12 }}>
+                Nenhuma pasta encontrada
+              </div>
+            )}
+            {results.map((folder) => (
+              <button
+                key={folder.id}
+                type="button"
+                onClick={() => handlePick(folder)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  width: '100%', padding: '9px 12px',
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  textAlign: 'left', borderBottom: '1px solid var(--color-border)',
+                  transition: 'background 0.1s',
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = '#F5F5F5'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
+              >
+                <Folder size={15} style={{ color: '#FBBC04', flexShrink: 0 }} />
+                <span style={{ fontSize: 13, color: 'var(--color-text)',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {folder.name}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function ProductModal({ product = null, onClose, onSaved, onDeleted }) {
@@ -291,6 +431,9 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
                     transform: 'translateY(-50%)', color: '#1B7F32' }} />
                 )}
               </div>
+              {hasGoogleApiKey && (
+                <DriveFolderPicker onSelect={(url) => handleDriveChange(url)} />
+              )}
               {form.fotos_drive && <CopyIconButton value={form.fotos_drive} />}
               {form.fotos_drive && (
                 <a href={form.fotos_drive} target="_blank" rel="noreferrer"

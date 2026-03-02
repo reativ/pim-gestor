@@ -45,3 +45,28 @@ export const getFirstImageFromFolder = async (folderUrl) => {
 }
 
 export const hasGoogleApiKey = !!API_KEY
+
+/**
+ * Search Drive folders by name.
+ * Returns array of { id, name, url } — only works for publicly shared folders.
+ */
+export const searchDriveFolders = async (query) => {
+  if (!query?.trim() || !API_KEY) return []
+  try {
+    const q = encodeURIComponent(
+      `name contains '${query.replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`
+    )
+    const fields = encodeURIComponent('files(id,name)')
+    const url = `https://www.googleapis.com/drive/v3/files?q=${q}&key=${API_KEY}&fields=${fields}&pageSize=10&orderBy=name`
+    const res = await fetchWithTimeout(url, 8000)
+    if (!res.ok) return []
+    const data = await res.json()
+    return (data.files || []).map((f) => ({
+      id: f.id,
+      name: f.name,
+      url: `https://drive.google.com/drive/folders/${f.id}`,
+    }))
+  } catch {
+    return []
+  }
+}
