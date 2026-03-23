@@ -1,228 +1,21 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef } from 'react'
 import Modal from './Modal'
 import Thumbnail from './Thumbnail'
 import { CopyIconButton } from './CopyButton'
-import { create, update, remove } from '../lib/db'
-import { getFirstImageFromFolder, hasGoogleApiKey, extractFolderId, searchDriveFolders } from '../lib/driveApi'
-import { openFolderPicker, hasPickerSupport } from '../lib/drivePicker'
-import { validateGTINChecksum } from '../lib/gs1'
+import { Section, Row, Field, InputWithCopy } from './ui'
+import DriveFolderSearch from './DriveFolderSearch'
 import GS1Button from './GS1Button'
-import { Image, Youtube, Video, BarChart2, Hash, Tag, DollarSign, ExternalLink, CheckCircle, Scale, Globe, FolderOpen, Search, Folder } from 'lucide-react'
+import { create, update, remove } from '../lib/db'
+import { getFirstImageFromFolder, hasGoogleApiKey, extractFolderId } from '../lib/driveApi'
+import { formatNcm, formatCest, ncmHint, cestHint, eanHint } from '../lib/validation'
+import { suggestNcm } from '../lib/ncm-api'
+import { Image, Youtube, Video, BarChart2, Hash, Tag, DollarSign, ExternalLink, CheckCircle, Scale, Globe, Sparkles } from 'lucide-react'
 
 const EMPTY = {
   nome: '', sku: '', ncm: '', cest: '', ean: '',
   custo: '', fotos_drive: '', thumbnail: '', video_ml: '', video_shopee: '',
-  // Campos GS1
-  gpc_code: '', peso_bruto: '', peso_liquido: '', conteudo_liquido: '', origem: '076',
-}
-
-function Section({ title, children }) {
-  return (
-    <div>
-      <div style={{ fontSize: 11.5, fontWeight: 800, textTransform: 'uppercase',
-        letterSpacing: '0.08em', color: 'var(--color-text-soft)', marginBottom: 12,
-        paddingBottom: 8, borderBottom: '1px solid var(--color-border)' }}>
-        {title}
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>{children}</div>
-    </div>
-  )
-}
-
-function Row({ children }) {
-  return <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>{children}</div>
-}
-
-function Field({ label, icon, children, hint }) {
-  return (
-    <div>
-      <label className="label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        {icon && <span style={{ color: 'var(--color-text-soft)' }}>{icon}</span>}
-        {label}
-      </label>
-      {children}
-      {hint && <p style={{ margin: '4px 0 0', fontSize: 11.5, color: 'var(--color-text-soft)' }}>{hint}</p>}
-    </div>
-  )
-}
-
-function InputWithCopy({ value, onChange, placeholder, type = 'text', maxLength, style: s }) {
-  return (
-    <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
-      <input className="input" type={type} value={value} onChange={onChange}
-        placeholder={placeholder} maxLength={maxLength} style={{ flex: 1, ...s }} />
-      {value && <CopyIconButton value={value} />}
-    </div>
-  )
-}
-
-// Gera o hint de validação do EAN enquanto o usuário digita
-function eanHint(ean) {
-  const digits = ean.replace(/\D/g, '')
-  if (!digits) return null
-  if (digits.length < 8) return null  // muito curto ainda, não incomodar
-
-  const result = validateGTINChecksum(digits)
-  if (result.reason === 'length') {
-    return `EAN deve ter 8, 12, 13 ou 14 dígitos (tem ${result.length})`
-  }
-  if (!result.valid) {
-    return `❌ Dígito verificador incorreto (esperado ${result.expected}, tem ${result.got})`
-  }
-  return `✅ EAN válido (${result.length} dígitos)`
-}
-
-/**
- * Drive Folder Picker button.
- * - If VITE_GOOGLE_CLIENT_ID is set → opens native Google Picker (OAuth)
- * - Otherwise → falls back to inline text search via API key
- */
-function DriveFolderPicker({ onSelect }) {
-  const [pickerLoading, setPickerLoading] = useState(false)
-
-  // ── Native Google Picker (when Client ID is configured) ──────────────────
-  if (hasPickerSupport) {
-    const handleClick = () => {
-      setPickerLoading(true)
-      openFolderPicker(
-        (url) => { onSelect(url); setPickerLoading(false) },
-        ()    => setPickerLoading(false)
-      )
-    }
-    return (
-      <button
-        type="button"
-        title="Selecionar pasta no Google Drive"
-        onClick={handleClick}
-        disabled={pickerLoading}
-        style={{
-          display: 'flex', alignItems: 'center', gap: 5, padding: '0 11px',
-          height: '100%', minHeight: 38,
-          background: '#F0F0F0', borderRadius: 8, border: '1.5px solid var(--color-border)',
-          color: 'var(--color-text-soft)', cursor: pickerLoading ? 'wait' : 'pointer',
-          flexShrink: 0,
-        }}
-      >
-        {pickerLoading
-          ? <span style={{ width: 14, height: 14, borderRadius: '50%',
-              border: '2px solid var(--color-border)', borderTopColor: 'var(--color-primary)',
-              display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
-          : <FolderOpen size={15} />}
-      </button>
-    )
-  }
-
-  // ── Fallback: inline text search via API key ─────────────────────────────
-  return <DriveFolderSearchFallback onSelect={onSelect} />
-}
-
-/** Fallback inline search dropdown (used when no OAuth Client ID is set) */
-function DriveFolderSearchFallback({ onSelect }) {
-  const [open, setOpen]         = useState(false)
-  const [query, setQuery]       = useState('')
-  const [results, setResults]   = useState([])
-  const [loading, setLoading]   = useState(false)
-  const [searched, setSearched] = useState(false)
-  const inputRef = useRef(null)
-  const wrapRef  = useRef(null)
-  const debounce = useRef(null)
-
-  useEffect(() => {
-    if (!open) return
-    const handler = (e) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open])
-
-  useEffect(() => {
-    if (open) setTimeout(() => inputRef.current?.focus(), 50)
-  }, [open])
-
-  const handleQuery = (val) => {
-    setQuery(val); setSearched(false)
-    clearTimeout(debounce.current)
-    if (!val.trim()) { setResults([]); return }
-    setLoading(true)
-    debounce.current = setTimeout(async () => {
-      const res = await searchDriveFolders(val)
-      setResults(res); setLoading(false); setSearched(true)
-    }, 500)
-  }
-
-  const handlePick = (folder) => {
-    onSelect(folder.url); setOpen(false); setQuery(''); setResults([]); setSearched(false)
-  }
-
-  return (
-    <div ref={wrapRef} style={{ position: 'relative', flexShrink: 0 }}>
-      <button
-        type="button"
-        title="Buscar pasta no Google Drive"
-        onClick={() => setOpen((v) => !v)}
-        style={{
-          display: 'flex', alignItems: 'center', padding: '0 11px',
-          height: '100%', minHeight: 38,
-          background: open ? 'var(--color-primary)' : '#F0F0F0',
-          borderRadius: 8, border: '1.5px solid var(--color-border)',
-          color: open ? '#fff' : 'var(--color-text-soft)',
-          cursor: 'pointer', transition: 'background 0.15s, color 0.15s',
-        }}
-      >
-        <FolderOpen size={15} />
-      </button>
-
-      {open && (
-        <div style={{
-          position: 'absolute', top: 'calc(100% + 6px)', right: 0,
-          width: 300, background: '#fff', borderRadius: 10,
-          border: '1.5px solid var(--color-border)',
-          boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 999, overflow: 'hidden',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8,
-            padding: '10px 12px', borderBottom: '1px solid var(--color-border)' }}>
-            <Search size={14} style={{ color: 'var(--color-text-soft)', flexShrink: 0 }} />
-            <input ref={inputRef} value={query} onChange={(e) => handleQuery(e.target.value)}
-              placeholder="Buscar pasta no Drive…"
-              style={{ flex: 1, border: 'none', outline: 'none', fontSize: 13,
-                fontFamily: 'var(--font-family)', background: 'transparent', color: 'var(--color-text)' }} />
-            {loading && <span style={{ width: 13, height: 13, borderRadius: '50%',
-              border: '2px solid var(--color-border)', borderTopColor: 'var(--color-primary)',
-              display: 'inline-block', animation: 'spin 0.7s linear infinite', flexShrink: 0 }} />}
-          </div>
-          <div style={{ maxHeight: 220, overflowY: 'auto' }}>
-            {!query.trim() && (
-              <div style={{ padding: '20px 12px', textAlign: 'center',
-                color: 'var(--color-text-soft)', fontSize: 12 }}>
-                Digite o nome da pasta para buscar
-              </div>
-            )}
-            {query.trim() && searched && results.length === 0 && !loading && (
-              <div style={{ padding: '20px 12px', textAlign: 'center',
-                color: 'var(--color-text-soft)', fontSize: 12 }}>
-                Nenhuma pasta encontrada
-              </div>
-            )}
-            {results.map((folder) => (
-              <button key={folder.id} type="button" onClick={() => handlePick(folder)}
-                style={{ display: 'flex', alignItems: 'center', gap: 10,
-                  width: '100%', padding: '9px 12px', background: 'none', border: 'none',
-                  cursor: 'pointer', textAlign: 'left', borderBottom: '1px solid var(--color-border)' }}
-                onMouseEnter={(e) => e.currentTarget.style.background = '#F5F5F5'}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'none'}>
-                <Folder size={15} style={{ color: '#FBBC04', flexShrink: 0 }} />
-                <span style={{ fontSize: 13, color: 'var(--color-text)',
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {folder.name}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  )
+  // GS1 fields
+  gpc_code: '', peso_bruto: '', peso_liquido: '', conteudo_liquido: '', conteudo_liquido_un: 'GRM', origem: '156',
 }
 
 export default function ProductModal({ product = null, onClose, onSaved, onDeleted }) {
@@ -233,11 +26,36 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [error, setError]       = useState('')
   const [thumbStatus, setThumbStatus] = useState('idle') // idle | loading | found | notfound
+  const [ncmSuggestion, setNcmSuggestion] = useState(null)   // null | { ncm, ncm_descricao, cest, cest_descricao, confianca, justificativa }
+  const [ncmSugLoading, setNcmSugLoading] = useState(false)
+  const [ncmSugError, setNcmSugError]     = useState('')
   const driveDebounce = useRef(null)
+
+  const handleSuggestNcm = async () => {
+    if (!form.nome.trim()) return
+    setNcmSugLoading(true)
+    setNcmSuggestion(null)
+    setNcmSugError('')
+    try {
+      const result = await suggestNcm({ nome: form.nome })
+      setNcmSuggestion(result)
+    } catch (e) {
+      setNcmSugError(e.message || 'Erro ao consultar IA.')
+    } finally {
+      setNcmSugLoading(false)
+    }
+  }
+
+  const applyNcmSuggestion = () => {
+    if (!ncmSuggestion) return
+    if (ncmSuggestion.ncm)  set('ncm',  ncmSuggestion.ncm)
+    if (ncmSuggestion.cest) set('cest', ncmSuggestion.cest)
+    setNcmSuggestion(null)
+  }
 
   const set = (field, value) => setForm((f) => ({ ...f, [field]: value }))
 
-  // Auto-thumbnail: when fotos_drive changes, try to fetch first image
+  // Auto-thumbnail: fetch first image when fotos_drive URL changes
   const handleDriveChange = (url) => {
     set('fotos_drive', url)
     if (!hasGoogleApiKey || !extractFolderId(url)) { setThumbStatus('idle'); return }
@@ -260,11 +78,25 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
     if (!form.nome.trim()) { setError('Preencha o nome do produto.'); return }
     setSaving(true); setError('')
     try {
-      if (isNew) { const p = await create(form); onSaved?.(p) }
-      else       { const p = await update(product.id, form); onSaved?.(p) }
+      if (isNew) await create(form)
+      else       await update(product.id, form)
+      onSaved?.()
       onClose()
     } catch (e) { setError(e.message || 'Erro ao salvar.') }
     finally { setSaving(false) }
+  }
+
+  // Auto-save when a GTIN is generated so it isn't lost if the modal is closed
+  const handleGTINGenerated = async (gtin) => {
+    const updated = { ...form, ean: gtin }
+    setForm(updated)
+    try {
+      if (isNew) await create(updated)
+      else       await update(product.id, updated)
+      onSaved?.()
+    } catch (e) {
+      console.error('Auto-save do EAN falhou:', e)
+    }
   }
 
   const handleDelete = async () => {
@@ -319,7 +151,9 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
       ? 'Cole o link da pasta — a thumbnail será detectada automaticamente.'
       : 'Cole o link da pasta do Drive com as fotos do produto.'
 
-  const eanValidation = eanHint(form.ean)
+  const ncmValidation  = ncmHint(form.ncm)
+  const cestValidation = cestHint(form.cest)
+  const eanValidation  = eanHint(form.ean)
 
   return (
     <Modal title={isNew ? 'Novo Produto' : 'Editar Produto'} onClose={onClose} size="lg" footer={footer}>
@@ -330,7 +164,7 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
             padding: '10px 14px', color: '#C73539', fontSize: 13 }}>{error}</div>
         )}
 
-        {/* Preview */}
+        {/* ── Preview ── */}
         <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', background: '#FAFAFA',
           borderRadius: 10, padding: 16, border: '1px solid var(--color-border)' }}>
           <Thumbnail product={form} size={80} radius={10} />
@@ -344,18 +178,20 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
           </div>
         </div>
 
-        {/* Identificação */}
+        {/* ── Identificação ── */}
         <Section title="Identificação">
           <Field label="Nome do Produto *" icon={<Tag size={14} />}>
-            <InputWithCopy value={form.nome} onChange={(e) => set('nome', e.target.value)} placeholder="Ex: Caixa Organizadora Plástica 10L" />
+            <InputWithCopy value={form.nome} onChange={(e) => set('nome', e.target.value)}
+              placeholder="Ex: Caixa Organizadora Plástica 10L" />
           </Field>
+
           <Row>
             <Field label="SKU" icon={<Hash size={14} />}>
-              <InputWithCopy value={form.sku} onChange={(e) => set('sku', e.target.value)} placeholder="Ex: CX-ORG-10L" />
+              <InputWithCopy value={form.sku} onChange={(e) => set('sku', e.target.value)}
+                placeholder="Ex: CX-ORG-10L" />
             </Field>
-            <Field label="EAN / GTIN" icon={<BarChart2 size={14} />}
-              hint={eanValidation}>
-              <div className="copy-field-wrap" style={{ display: 'flex', gap: 6 }}>
+            <Field label="EAN / GTIN" icon={<BarChart2 size={14} />} hint={eanValidation}>
+              <div style={{ display: 'flex', gap: 6 }}>
                 <input className="input" value={form.ean}
                   onChange={(e) => set('ean', e.target.value.replace(/\D/g, '').slice(0, 14))}
                   placeholder="7891234567890" maxLength={14} style={{ flex: 1 }} />
@@ -363,31 +199,92 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
               </div>
               {!form.ean && (
                 <div style={{ marginTop: 6 }}>
-                  <GS1Button
-                    product={form}
-                    onGenerated={(gtin) => set('ean', gtin)}
-                  />
+                  <GS1Button product={form} onGenerated={handleGTINGenerated} />
                 </div>
               )}
             </Field>
           </Row>
+
           <Row>
-            <Field label="NCM" icon={<Hash size={14} />} hint="8 dígitos — ex: 39241000">
-              <InputWithCopy value={form.ncm}
+            <Field label="NCM" icon={<Hash size={14} />}
+              hint={ncmValidation && (
+                <span style={{ color: ncmValidation.ok ? '#1B7F32' : 'var(--color-text-soft)' }}>
+                  {ncmValidation.msg}
+                </span>
+              )}>
+              <InputWithCopy
+                value={formatNcm(form.ncm)}
+                copyValue={form.ncm}
                 onChange={(e) => set('ncm', e.target.value.replace(/\D/g, '').slice(0, 8))}
-                placeholder="39241000" maxLength={8} />
+                placeholder="3924.10.00"
+                maxLength={11}
+              />
             </Field>
-            <Field label="CEST" icon={<Hash size={14} />}>
-              <InputWithCopy value={form.cest} onChange={(e) => set('cest', e.target.value)} placeholder="Ex: 1234567" />
+            <Field label="CEST" icon={<Hash size={14} />}
+              hint={cestValidation && (
+                <span style={{ color: cestValidation.ok ? '#1B7F32' : 'var(--color-text-soft)' }}>
+                  {cestValidation.msg}
+                </span>
+              )}>
+              <InputWithCopy
+                value={formatCest(form.cest)}
+                copyValue={form.cest}
+                onChange={(e) => set('cest', e.target.value.replace(/\D/g, '').slice(0, 7))}
+                placeholder="10.004.00"
+                maxLength={9}
+              />
             </Field>
           </Row>
+
+          {/* ── Sugestão de NCM via IA ── */}
+          {(!form.ncm || !form.cest) && (
+            <div>
+              <button
+                type="button"
+                onClick={handleSuggestNcm}
+                disabled={ncmSugLoading || !form.nome.trim()}
+                title={!form.nome.trim() ? 'Preencha o nome do produto primeiro' : 'Sugerir NCM e CEST com IA'}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '6px 12px', borderRadius: 8,
+                  border: '1.5px solid var(--color-primary)',
+                  background: 'transparent', color: 'var(--color-primary)',
+                  fontFamily: 'var(--font-family)', fontSize: 12, fontWeight: 700,
+                  cursor: ncmSugLoading || !form.nome.trim() ? 'not-allowed' : 'pointer',
+                  opacity: !form.nome.trim() ? 0.4 : 1,
+                  transition: 'all 0.15s',
+                }}
+                onMouseEnter={(e) => { if (form.nome.trim() && !ncmSugLoading) { e.currentTarget.style.background = 'var(--color-primary)'; e.currentTarget.style.color = '#fff' }}}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--color-primary)' }}
+              >
+                {ncmSugLoading
+                  ? <span style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid currentColor', borderTopColor: 'transparent', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
+                  : <Sparkles size={13} />}
+                {ncmSugLoading ? 'Consultando IA…' : 'Sugerir NCM e CEST com IA'}
+              </button>
+
+              {ncmSugError && (
+                <p style={{ marginTop: 8, fontSize: 12, color: '#C73539' }}>{ncmSugError}</p>
+              )}
+
+              {ncmSuggestion && (
+                <NcmSuggestionCard
+                  suggestion={ncmSuggestion}
+                  onApply={applyNcmSuggestion}
+                  onDismiss={() => setNcmSuggestion(null)}
+                />
+              )}
+            </div>
+          )}
+
           <Field label="Custo" icon={<DollarSign size={14} />}>
             <InputWithCopy value={form.custo} type="number" step="0.01" min="0"
-              onChange={(e) => set('custo', e.target.value)} placeholder="0,00" style={{ maxWidth: 180 }} />
+              onChange={(e) => set('custo', e.target.value)} placeholder="0,00"
+              style={{ maxWidth: 180 }} />
           </Field>
         </Section>
 
-        {/* GS1 / Logística */}
+        {/* ── GS1 / Logística ── */}
         <Section title="GS1 / Logística">
           <Row>
             <Field label="País de Origem" icon={<Globe size={14} />}>
@@ -398,35 +295,41 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
               </select>
             </Field>
             <Field label="Código GPC" icon={<Hash size={14} />}
-              hint={<>Categoria GS1. <a href="https://www.gs1br.org/servicos/gpc" target="_blank" rel="noreferrer" style={{ color: 'var(--color-primary)' }}>Buscar código</a></>}>
+              hint={<>Categoria GS1. <a href="https://gpc-browser.gs1.org/" target="_blank" rel="noreferrer"
+                style={{ color: 'var(--color-primary)' }}>Buscar código</a></>}>
               <InputWithCopy value={form.gpc_code}
                 onChange={(e) => set('gpc_code', e.target.value.replace(/\D/g, '').slice(0, 8))}
                 placeholder="Ex: 10000003" maxLength={8} />
             </Field>
           </Row>
           <Row>
-            <Field label="Peso Bruto (g)" icon={<Scale size={14} />}
-              hint="Com embalagem">
+            <Field label="Peso Bruto (g)" icon={<Scale size={14} />} hint="Com embalagem">
               <input className="input" type="number" min="0" step="1" value={form.peso_bruto}
-                onChange={(e) => set('peso_bruto', e.target.value)}
-                placeholder="Ex: 150" />
+                onChange={(e) => set('peso_bruto', e.target.value)} placeholder="Ex: 150" />
             </Field>
-            <Field label="Peso Líquido (g)" icon={<Scale size={14} />}
-              hint="Sem embalagem">
+            <Field label="Peso Líquido (g)" icon={<Scale size={14} />} hint="Sem embalagem">
               <input className="input" type="number" min="0" step="1" value={form.peso_liquido}
-                onChange={(e) => set('peso_liquido', e.target.value)}
-                placeholder="Ex: 100" />
+                onChange={(e) => set('peso_liquido', e.target.value)} placeholder="Ex: 100" />
             </Field>
           </Row>
-          <Field label="Conteúdo Líquido (g)" icon={<Scale size={14} />}
-            hint="Quantidade declarada na embalagem" style={{ maxWidth: 220 }}>
-            <input className="input" type="number" min="0" step="1" value={form.conteudo_liquido}
-              onChange={(e) => set('conteudo_liquido', e.target.value)}
-              placeholder="Ex: 100" style={{ maxWidth: 220 }} />
+          <Field label="Conteúdo Líquido" icon={<Scale size={14} />}
+            hint="Quantidade declarada na embalagem">
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input className="input" type="number" min="0" step="1" value={form.conteudo_liquido}
+                onChange={(e) => set('conteudo_liquido', e.target.value)}
+                placeholder={form.conteudo_liquido_un === 'GRM' ? 'Ex: 100' : 'Ex: 1'}
+                style={{ maxWidth: 160 }} />
+              <select className="input" value={form.conteudo_liquido_un}
+                onChange={(e) => set('conteudo_liquido_un', e.target.value)}
+                style={{ maxWidth: 120, cursor: 'pointer' }}>
+                <option value="GRM">g (gramas)</option>
+                <option value="EA">un (unidade)</option>
+              </select>
+            </div>
           </Field>
         </Section>
 
-        {/* Imagens */}
+        {/* ── Imagens & Mídia ── */}
         <Section title="Imagens & Mídia">
           <Field label="Pasta de Fotos (Google Drive)" icon={<Image size={14} />} hint={thumbHint}>
             <div style={{ display: 'flex', gap: 6 }}>
@@ -445,9 +348,7 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
                     transform: 'translateY(-50%)', color: '#1B7F32' }} />
                 )}
               </div>
-              {hasGoogleApiKey && (
-                <DriveFolderPicker onSelect={(url) => handleDriveChange(url)} />
-              )}
+              <DriveFolderSearch onSelect={(url) => handleDriveChange(url)} />
               {form.fotos_drive && <CopyIconButton value={form.fotos_drive} />}
               {form.fotos_drive && (
                 <a href={form.fotos_drive} target="_blank" rel="noreferrer"
@@ -462,47 +363,130 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
 
           <Field label="Thumbnail (URL da imagem)" icon={<Image size={14} />}
             hint="Preenchida automaticamente ao detectar imagem na pasta. Pode editar manualmente.">
-            <InputWithCopy value={form.thumbnail}
-              onChange={(e) => set('thumbnail', e.target.value)}
+            <InputWithCopy value={form.thumbnail} onChange={(e) => set('thumbnail', e.target.value)}
               placeholder="https://drive.google.com/file/d/..." />
           </Field>
         </Section>
 
-        {/* Vídeos */}
+        {/* ── Links de Vídeo ── */}
         <Section title="Links de Vídeo">
-          <Field label="Vídeo Mercado Livre" icon={<Youtube size={14} />}>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <input className="input" value={form.video_ml} onChange={(e) => set('video_ml', e.target.value)}
-                placeholder="https://youtube.com/..." style={{ flex: 1 }} />
-              {form.video_ml && <CopyIconButton value={form.video_ml} />}
-              {form.video_ml && (
-                <a href={form.video_ml} target="_blank" rel="noreferrer"
-                  style={{ display: 'flex', alignItems: 'center', padding: '0 11px', background: '#F0F0F0',
-                    borderRadius: 8, border: '1.5px solid var(--color-border)', color: 'var(--color-text-soft)',
-                    textDecoration: 'none', flexShrink: 0 }}>
-                  <ExternalLink size={15} />
-                </a>
-              )}
-            </div>
-          </Field>
-          <Field label="Vídeo Shopee" icon={<Video size={14} />}>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <input className="input" value={form.video_shopee} onChange={(e) => set('video_shopee', e.target.value)}
-                placeholder="https://youtube.com/..." style={{ flex: 1 }} />
-              {form.video_shopee && <CopyIconButton value={form.video_shopee} />}
-              {form.video_shopee && (
-                <a href={form.video_shopee} target="_blank" rel="noreferrer"
-                  style={{ display: 'flex', alignItems: 'center', padding: '0 11px', background: '#F0F0F0',
-                    borderRadius: 8, border: '1.5px solid var(--color-border)', color: 'var(--color-text-soft)',
-                    textDecoration: 'none', flexShrink: 0 }}>
-                  <ExternalLink size={15} />
-                </a>
-              )}
-            </div>
-          </Field>
+          <VideoField label="Vídeo Mercado Livre" icon={<Youtube size={14} />}
+            value={form.video_ml} onChange={(v) => set('video_ml', v)} />
+          <VideoField label="Vídeo Shopee" icon={<Video size={14} />}
+            value={form.video_shopee} onChange={(v) => set('video_shopee', v)} />
         </Section>
+
       </div>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </Modal>
+  )
+}
+
+// ── Confidence badge ─────────────────────────────────────────────────────────
+const CONFIANCA_CONFIG = {
+  alta:  { color: '#1B7F32', bg: '#F0FFF4', label: '🟢 Alta' },
+  media: { color: '#8B5E00', bg: '#FFFBEB', label: '🟡 Média' },
+  baixa: { color: '#C73539', bg: '#FFF5F5', label: '🔴 Baixa' },
+}
+
+/** Card shown after Claude suggests NCM + CEST */
+function NcmSuggestionCard({ suggestion, onApply, onDismiss }) {
+  const conf = CONFIANCA_CONFIG[suggestion.confianca] || CONFIANCA_CONFIG.media
+  const { formatNcm: fmt, formatCest: fmtC } = { formatNcm, formatCest }
+
+  return (
+    <div style={{
+      marginTop: 10, borderRadius: 10, border: `1.5px solid ${conf.color}`,
+      background: conf.bg, padding: '12px 14px',
+      display: 'flex', flexDirection: 'column', gap: 8,
+    }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <Sparkles size={13} style={{ color: conf.color, flexShrink: 0 }} />
+          <span style={{ fontSize: 12, fontWeight: 800, color: conf.color, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            Sugestão da IA
+          </span>
+        </div>
+        <span style={{ fontSize: 11, color: conf.color, fontWeight: 600 }}>{conf.label} confiança</span>
+      </div>
+
+      {/* NCM */}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-soft)', minWidth: 36 }}>NCM</span>
+        <span style={{ fontSize: 15, fontWeight: 800, fontFamily: 'monospace', color: 'var(--color-text)' }}>
+          {fmt(suggestion.ncm)}
+        </span>
+        <span style={{ fontSize: 12, color: 'var(--color-text-soft)' }}>{suggestion.ncm_descricao}</span>
+      </div>
+
+      {/* CEST */}
+      {suggestion.cest && (
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--color-text-soft)', minWidth: 36 }}>CEST</span>
+          <span style={{ fontSize: 15, fontWeight: 800, fontFamily: 'monospace', color: 'var(--color-text)' }}>
+            {fmtC(suggestion.cest)}
+          </span>
+          {suggestion.cest_descricao && (
+            <span style={{ fontSize: 12, color: 'var(--color-text-soft)' }}>{suggestion.cest_descricao}</span>
+          )}
+        </div>
+      )}
+
+      {/* Justificativa */}
+      <p style={{ margin: 0, fontSize: 12, color: 'var(--color-text-soft)', fontStyle: 'italic', lineHeight: 1.5 }}>
+        {suggestion.justificativa}
+      </p>
+
+      {/* Actions */}
+      <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
+        <button
+          type="button"
+          onClick={onApply}
+          style={{
+            padding: '6px 14px', borderRadius: 7, border: 'none',
+            background: conf.color, color: '#fff',
+            fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-family)',
+            cursor: 'pointer',
+          }}
+        >
+          Usar esse
+        </button>
+        <button
+          type="button"
+          onClick={onDismiss}
+          style={{
+            padding: '6px 12px', borderRadius: 7,
+            border: '1.5px solid var(--color-border)', background: 'transparent',
+            color: 'var(--color-text-soft)', fontSize: 12, fontWeight: 600,
+            fontFamily: 'var(--font-family)', cursor: 'pointer',
+          }}
+        >
+          Ignorar
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/** Reusable URL field with copy + external link buttons */
+function VideoField({ label, icon, value, onChange }) {
+  return (
+    <Field label={label} icon={icon}>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <input className="input" value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="https://youtube.com/..." style={{ flex: 1 }} />
+        {value && <CopyIconButton value={value} />}
+        {value && (
+          <a href={value} target="_blank" rel="noreferrer"
+            style={{ display: 'flex', alignItems: 'center', padding: '0 11px',
+              background: '#F0F0F0', borderRadius: 8, border: '1.5px solid var(--color-border)',
+              color: 'var(--color-text-soft)', textDecoration: 'none', flexShrink: 0 }}>
+            <ExternalLink size={15} />
+          </a>
+        )}
+      </div>
+    </Field>
   )
 }

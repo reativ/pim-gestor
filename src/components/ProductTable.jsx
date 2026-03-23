@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import Thumbnail from './Thumbnail'
 import Badge from './Badge'
 import { CopyField } from './CopyButton'
-import { formatCurrency, formatNCM } from '../lib/utils'
+import { formatCurrency } from '../lib/utils'
+import { formatNcm } from '../lib/validation'
 import { Edit2, ExternalLink, Youtube, Video, CheckCircle, XCircle, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
 
 const Check = ({ ok }) =>
@@ -69,7 +70,7 @@ export default function ProductTable({ products, onEdit }) {
     })
   }
 
-  const sorted = sortProducts(products, sort)
+  const sorted = useMemo(() => sortProducts(products, sort), [products, sort])
 
   if (products.length === 0) {
     return (
@@ -133,7 +134,7 @@ export default function ProductTable({ products, onEdit }) {
               {/* NCM */}
               <td>
                 {p.ncm ? (
-                  <CopyField value={formatNCM(p.ncm)} label="NCM" mono />
+                  <CopyField value={formatNcm(p.ncm)} copyValue={p.ncm?.replace(/\D/g, '')} label="NCM" mono />
                 ) : (
                   <Badge variant="orange">Pendente</Badge>
                 )}

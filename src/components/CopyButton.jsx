@@ -5,14 +5,16 @@ import { Copy, Check } from 'lucide-react'
  * Inline copy-on-hover button.
  * Wrap any field value: <CopyField label="NCM" value={p.ncm} />
  */
-export function CopyField({ label, value, mono = false }) {
+export function CopyField({ label, value, copyValue, mono = false }) {
   const [copied, setCopied] = useState(false)
   const empty = !value?.toString().trim()
+  // copyValue permite copiar um valor diferente do exibido (ex: sem formatação)
+  const textToCopy = copyValue !== undefined ? String(copyValue) : String(value ?? '')
 
   const handleCopy = (e) => {
     e.stopPropagation()
     if (empty) return
-    navigator.clipboard.writeText(value)
+    navigator.clipboard.writeText(textToCopy)
     setCopied(true)
     setTimeout(() => setCopied(false), 1800)
   }

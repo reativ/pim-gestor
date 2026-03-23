@@ -37,14 +37,8 @@ export const formatCurrency = (val) => {
   return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
-export const formatNCM = (ncm) => {
-  if (!ncm) return '—'
-  const digits = ncm.replace(/\D/g, '')
-  if (digits.length === 8) {
-    return `${digits.slice(0,4)}.${digits.slice(4,6)}.${digits.slice(6,8)}`
-  }
-  return ncm
-}
+// Re-exported from lib/validation for backward compatibility
+export { formatNcm as formatNCM } from './validation'
 
 // ── Filter helpers ────────────────────────────────────────
 export const FILTERS = [

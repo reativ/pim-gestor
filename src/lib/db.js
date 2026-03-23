@@ -12,14 +12,14 @@ const lsSave = (p) => localStorage.setItem(LS_KEY, JSON.stringify(p))
 // Colunas base — sempre existem na tabela
 const CORE_COLS = ['nome','sku','ncm','cest','ean','custo','fotos_drive','thumbnail','video_ml','video_shopee']
 // Colunas GS1 — adicionadas via migration; campos opcionais
-const GS1_COLS  = ['gpc_code','peso_bruto','peso_liquido','conteudo_liquido','origem']
+const GS1_COLS  = ['gpc_code','peso_bruto','peso_liquido','conteudo_liquido','conteudo_liquido_un','origem']
 
 const blank = (data = {}) => ({
   nome: '', sku: '', ncm: '', cest: '', ean: '',
   custo: '', fotos_drive: '', thumbnail: '',
   video_ml: '', video_shopee: '',
   // GS1 — ficam vazios por padrão, preenchidos quando migration rodar
-  gpc_code: '', peso_bruto: '', peso_liquido: '', conteudo_liquido: '', origem: '076',
+  gpc_code: '', peso_bruto: '', peso_liquido: '', conteudo_liquido: '', conteudo_liquido_un: 'GRM', origem: '156',
   ...data,
 })
 
@@ -29,7 +29,9 @@ const withoutGs1 = (obj) =>
 
 // Verifica se o erro é "coluna não existe" (migration pendente)
 const isMissingColumnError = (err) =>
-  err?.code === 'PGRST204' || err?.message?.includes('does not exist')
+  err?.code === 'PGRST204' ||
+  err?.message?.includes('does not exist') ||
+  err?.message?.includes('Could not find')
 
 export const getAll = async () => {
   if (hasSupabase) {

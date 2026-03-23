@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { ScanLine, CheckCircle, AlertCircle } from 'lucide-react'
+import { registerGS1Product } from '../lib/gs1-api'
 
 /**
- * Botão para gerar um novo EAN/GTIN via GS1 Brasil.
- * Só aparece quando o produto ainda não tem EAN.
- * Após geração bem-sucedida, chama onGenerated(gtin) para preencher o campo.
+ * Button to generate an EAN/GTIN via GS1 Brasil.
+ * Only shown when the product doesn't have an EAN yet.
+ * On success calls onGenerated(gtin) to populate the field.
  */
 export default function GS1Button({ product, onGenerated }) {
   const [status, setStatus]   = useState('idle') // idle | loading | success | error
@@ -16,46 +17,22 @@ export default function GS1Button({ product, onGenerated }) {
     setMessage('')
 
     try {
-      const res = await fetch('/api/gs1-register', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          nome:            product.nome,
-          // marca sempre "Morini" — padrão da empresa
-          gpcCategoryCode: product.gpc_code           || undefined,
-          ncm:             product.ncm                 || undefined,
-          cest:            product.cest                || undefined,
-          pesoBruto:       product.peso_bruto           ? Number(product.peso_bruto)           : undefined,
-          pesoLiquido:     product.peso_liquido         ? Number(product.peso_liquido)         : undefined,
-          conteudoLiquido: product.conteudo_liquido     ? Number(product.conteudo_liquido)     : undefined,
-          origem:          product.origem               || '076',
-          imagemURL:       product.thumbnail            || undefined,
-        }),
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) throw new Error(data.error || `Erro ${res.status}`)
-
-      const gtin = data.gtin
-      if (!gtin) throw new Error('GS1 não retornou o GTIN gerado.')
-
+      const { gtin } = await registerGS1Product(product)
       setStatus('success')
       setMessage(`EAN gerado: ${gtin}`)
       onGenerated?.(gtin)
-
     } catch (err) {
       setStatus('error')
       setMessage(err.message || 'Erro ao gerar EAN no GS1.')
+      // Auto-reset error state after 15 s
+      setTimeout(() => {
+        setStatus((s) => { if (s === 'error') { setMessage(''); return 'idle' } return s })
+      }, 15000)
     }
-
-    setTimeout(() => {
-      if (status !== 'success') { setStatus('idle'); setMessage('') }
-    }, 8000)
   }
 
   const bgColor = status === 'success' ? '#1B7F32'
-    : status === 'error' ? '#C73539'
+    : status === 'error'   ? '#C73539'
     : 'var(--color-primary)'
 
   return (
@@ -75,12 +52,15 @@ export default function GS1Button({ product, onGenerated }) {
         }}
       >
         {status === 'loading' ? (
-          <span style={{ width: 13, height: 13, borderRadius: '50%',
+          <span style={{
+            width: 13, height: 13, borderRadius: '50%',
             border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff',
-            display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
+            display: 'inline-block', animation: 'spin 0.7s linear infinite',
+          }} />
         ) : status === 'success' ? <CheckCircle size={13} />
-          : status === 'error'   ? <AlertCircle size={13} />
+          : status === 'error'   ? <AlertCircle  size={13} />
           : <ScanLine size={13} />}
+
         {status === 'loading' ? 'Gerando EAN…'
           : status === 'success' ? 'EAN gerado!'
           : status === 'error'   ? 'Erro — tentar novamente'
@@ -88,11 +68,15 @@ export default function GS1Button({ product, onGenerated }) {
       </button>
 
       {message && (
-        <span style={{ fontSize: 12, lineHeight: 1.4, maxWidth: 280,
-          color: status === 'success' ? '#1B7F32' : '#C73539' }}>
+        <span style={{
+          fontSize: 11, lineHeight: 1.4, maxWidth: 380,
+          color: status === 'success' ? '#1B7F32' : '#C73539',
+          wordBreak: 'break-word',
+        }}>
           {message}
         </span>
       )}
+
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   )

@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
-import { LogOut, ChevronDown } from 'lucide-react'
+import { LogOut, ChevronDown, Search, X } from 'lucide-react'
 import { signOut } from '../lib/auth'
 import { hasSupabase } from '../lib/supabase'
 
-export default function Navbar({ userEmail }) {
+export default function Navbar({ userEmail, search = '', onSearchChange }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
@@ -43,9 +43,43 @@ export default function Navbar({ userEmail }) {
         />
 
         {/* Title */}
-        <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--color-text)', flex: 1 }}>
+        <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--color-text)', flexShrink: 0 }}>
           Gestor de Produtos
         </span>
+
+        {/* Search bar — sticky com a navbar */}
+        {onSearchChange && (
+          <div style={{ position: 'relative', flex: '1 1 240px', maxWidth: 420, margin: '0 8px' }}>
+            <Search
+              size={16}
+              style={{
+                position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)',
+                color: '#B0B0B0', pointerEvents: 'none',
+              }}
+            />
+            <input
+              className="input"
+              value={search}
+              onChange={(e) => onSearchChange(e.target.value)}
+              placeholder="Buscar por nome, SKU, EAN, NCM…"
+              style={{ paddingLeft: 36, paddingRight: search ? 34 : 12, height: 38, fontSize: 13 }}
+            />
+            {search && (
+              <button
+                onClick={() => onSearchChange('')}
+                style={{
+                  position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: '#B0B0B0', display: 'flex', padding: 4,
+                }}
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        )}
+
+        <div style={{ flex: 1 }} />
 
         {/* User dropdown */}
         {hasSupabase && userEmail && (

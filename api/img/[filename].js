@@ -1,9 +1,11 @@
 /**
- * Vercel API — /api/img?id=GOOGLE_DRIVE_FILE_ID
+ * Vercel API — /api/img/produto.jpg?id=GOOGLE_DRIVE_FILE_ID
  *
  * Proxy de imagem: busca a imagem pelo Google Drive API v3 e a serve
  * diretamente, sem redirects, com Content-Type correto.
- * Necessário porque o GS1 Brasil não consegue seguir os redirects do Drive.
+ *
+ * A URL termina com extensão (.jpg, .png, .gif) para satisfazer a validação
+ * GS1-4200 da API GS1 Brasil, que exige URLs com extensão de imagem explícita.
  *
  * Requer: VITE_GOOGLE_API_KEY no Vercel (mesma chave usada no frontend).
  */
@@ -30,7 +32,7 @@ export default async function handler(req, res) {
         if (contentType.includes('image/') || contentType.includes('application/octet')) {
           const buffer = await response.arrayBuffer()
           res.setHeader('Content-Type', contentType.split(';')[0].trim() || 'image/jpeg')
-          res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=3600')
+          res.setHeader('Cache-Control', 'public, s-maxage=86400, max-age=86400, stale-while-revalidate=3600')
           res.send(Buffer.from(buffer))
           return
         }
@@ -50,7 +52,7 @@ export default async function handler(req, res) {
       if (contentType.includes('image/') || contentType.includes('application/octet')) {
         const buffer = await response.arrayBuffer()
         res.setHeader('Content-Type', contentType.split(';')[0].trim() || 'image/jpeg')
-        res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=3600')
+        res.setHeader('Cache-Control', 'public, s-maxage=86400, max-age=86400, stale-while-revalidate=3600')
         res.send(Buffer.from(buffer))
         return
       }
@@ -69,7 +71,7 @@ export default async function handler(req, res) {
       if (contentType.includes('image/') || contentType.includes('application/octet')) {
         const buffer = await response.arrayBuffer()
         res.setHeader('Content-Type', contentType.split(';')[0].trim() || 'image/jpeg')
-        res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=3600')
+        res.setHeader('Cache-Control', 'public, s-maxage=86400, max-age=86400, stale-while-revalidate=3600')
         res.send(Buffer.from(buffer))
         return
       }
