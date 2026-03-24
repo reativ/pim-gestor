@@ -186,6 +186,10 @@ body {
   color: var(--color-text-soft);
   border-bottom: 1.5px solid var(--color-border);
   background: #FAFAFA;
+  /* Sticky header — sticks below the 60px navbar */
+  position: sticky;
+  top: 60px;
+  z-index: 2;
 }
 .data-table td {
   padding: 14px 16px;
