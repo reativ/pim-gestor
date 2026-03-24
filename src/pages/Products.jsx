@@ -227,7 +227,7 @@ export default function Products({ session }) {
             background: 'var(--color-white)',
             borderRadius: 'var(--radius-card)',
             boxShadow: 'var(--shadow-card)',
-            overflow: 'hidden',
+            overflow: 'clip',  // clip = visual clipping only, does NOT create scroll container (sticky works)
           }}>
             <ProductTable products={visible} onEdit={setEditProduct} />
             {visible.length === 0 && (

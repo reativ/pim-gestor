@@ -82,8 +82,8 @@ export default function ProductTable({ products, onEdit }) {
   }
 
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table className="data-table">
+    <div>
+      <table className="data-table" style={{ overflowX: 'auto' }}>
         <thead>
           <tr>
             <th style={{ width: 60 }}></th>
