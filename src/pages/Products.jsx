@@ -7,7 +7,7 @@ import ProductList from '../components/ProductList'
 import ProductTable from '../components/ProductTable'
 import ProductModal from '../components/ProductModal'
 import ImportModal from '../components/ImportModal'
-import { List, Table2, Download, RefreshCw, X } from 'lucide-react'
+import { List, Table2, Download, RefreshCw, X, Plus, Upload } from 'lucide-react'
 import { LoadingState, EmptyState, NoResults } from '../components/ProductsEmptyStates'
 
 export default function Products({ session }) {
