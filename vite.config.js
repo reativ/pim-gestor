@@ -6,4 +6,8 @@ export default defineConfig({
   server: {
     port: 3000,
   },
+  // Optimizes lucide-react barrel imports — avoids loading all 1500+ icons in dev
+  optimizeDeps: {
+    include: ['lucide-react'],
+  },
 })

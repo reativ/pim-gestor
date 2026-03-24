@@ -23,7 +23,9 @@ export default function FilterBar({ products, active, onFilterChange }) {
     return result
   }, [products])
 
-  const totalPending = Object.values(counts).some((c) => c > 0)
+  // Derived from memoized counts — also memoized to avoid recomputing on unrelated renders
+  // Rule: rerender-derived-state-no-effect
+  const totalPending = useMemo(() => Object.values(counts).some((c) => c > 0), [counts])
 
   return (
     <div style={{

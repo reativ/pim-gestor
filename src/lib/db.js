@@ -105,11 +105,15 @@ export const bulkImport = async (rows) => {
       if (existingId) toUpdate.push({ id: existingId, ...row, updated_at: now })
       else toInsert.push(blank(row))
     }
-    if (toInsert.length) await supabase.from('products').insert(toInsert)
-    for (const r of toUpdate) {
-      const { id, ...rest } = r
-      await supabase.from('products').update(rest).eq('id', id)
-    }
+    // Run all writes in parallel — rule: async-parallel
+    await Promise.all([
+      toInsert.length
+        ? supabase.from('products').insert(toInsert)
+        : Promise.resolve(),
+      ...toUpdate.map(({ id, ...rest }) =>
+        supabase.from('products').update(rest).eq('id', id)
+      ),
+    ])
     return toInsert.length + toUpdate.length
   }
   const products = lsLoad()
