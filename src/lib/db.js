@@ -10,7 +10,7 @@ const lsLoad = () => { try { return JSON.parse(localStorage.getItem(LS_KEY) || '
 const lsSave = (p) => localStorage.setItem(LS_KEY, JSON.stringify(p))
 
 // Colunas base — sempre existem na tabela
-const CORE_COLS = ['nome','sku','ncm','cest','ean','custo','fotos_drive','thumbnail','video_ml','video_shopee','descricao_ml','descricao_amazon','descricao_shopee']
+const CORE_COLS = ['nome','sku','ncm','cest','ean','custo','fotos_drive','thumbnail','video_ml','video_shopee','descricao_ml','descricao_amazon','descricao_shopee','bullets_amazon']
 // Colunas GS1 — adicionadas via migration; campos opcionais
 const GS1_COLS  = ['gpc_code','peso_bruto','peso_liquido','conteudo_liquido','conteudo_liquido_un','origem']
 
@@ -19,7 +19,7 @@ const blank = (data = {}) => ({
   custo: '', fotos_drive: '', thumbnail: '',
   video_ml: '', video_shopee: '',
   // Marketplace descriptions
-  descricao_ml: '', descricao_amazon: '', descricao_shopee: '',
+  descricao_ml: '', descricao_amazon: '', descricao_shopee: '', bullets_amazon: '',
   // GS1 — ficam vazios por padrão, preenchidos quando migration rodar
   gpc_code: '', peso_bruto: '', peso_liquido: '', conteudo_liquido: '', conteudo_liquido_un: 'GRM', origem: '156',
   ...data,

@@ -28,6 +28,7 @@ const EMPTY = {
   gpc_code: '', peso_bruto: '', peso_liquido: '', conteudo_liquido: '', conteudo_liquido_un: 'GRM', origem: '156',
   // Marketplace descriptions
   descricao_ml: '', descricao_amazon: '', descricao_shopee: '',
+  bullets_amazon: '',
 }
 
 export default function ProductModal({ product = null, onClose, onSaved, onDeleted }) {
@@ -68,12 +69,16 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
     setDescLoading((p) => ({ ...p, [platform]: true }))
     setDescError((p) => ({ ...p, [platform]: '' }))
     try {
-      const { descricao } = await suggestDescription({
+      const result = await suggestDescription({
         nome: form.nome,
         platform,
         thumbnail: form.thumbnail || undefined,
       })
-      set(`descricao_${platform}`, descricao)
+      set(`descricao_${platform}`, result.descricao)
+      // Amazon also returns bullets
+      if (platform === 'amazon' && result.bullets?.length) {
+        set('bullets_amazon', result.bullets.join('\n'))
+      }
     } catch (e) {
       setDescError((p) => ({ ...p, [platform]: e.message || 'Erro ao gerar descrição.' }))
     } finally {
@@ -409,7 +414,7 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
           <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
             {Object.entries(PLATFORMS).map(([key, plat]) => {
               const isActive = descTab === key
-              const hasContent = !!form[`descricao_${key}`]?.trim()
+              const hasContent = !!form[`descricao_${key}`]?.trim() || (key === 'amazon' && !!form.bullets_amazon?.trim())
               return (
                 <button
                   key={key}
@@ -448,6 +453,46 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
 
             return (
               <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+
+                {/* Amazon Bullet Points */}
+                {key === 'amazon' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text-soft)' }}>
+                      Bullet Points (5 pontos principais)
+                    </label>
+                    {Array.from({ length: 5 }).map((_, i) => {
+                      const bullets = (form.bullets_amazon || '').split('\n')
+                      return (
+                        <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: '#B0B0B0', minWidth: 16, textAlign: 'center' }}>{i + 1}</span>
+                          <input
+                            className="input"
+                            value={bullets[i] || ''}
+                            onChange={(e) => {
+                              const updated = [...bullets]
+                              // Ensure array has at least i+1 entries
+                              while (updated.length <= i) updated.push('')
+                              updated[i] = e.target.value
+                              set('bullets_amazon', updated.join('\n'))
+                            }}
+                            placeholder={`Bullet ${i + 1} — ex: ✅ Benefício principal do produto`}
+                            maxLength={200}
+                            style={{ flex: 1, fontSize: 13 }}
+                          />
+                          <CopyIconButton value={bullets[i] || ''} />
+                        </div>
+                      )
+                    })}
+                    <span style={{ fontSize: 11, color: '#B0B0B0' }}>
+                      Cada bullet deve começar com um emoji. Máx. 200 caracteres cada.
+                    </span>
+                  </div>
+                )}
+
+                {/* Separator between bullets and description for Amazon */}
+                {key === 'amazon' && form.bullets_amazon?.trim() && (
+                  <hr style={{ border: 'none', borderTop: '1px solid var(--color-border)', margin: '4px 0' }} />
+                )}
 
                 {/* Textarea / preview */}
                 {isHtml && amazonPreview ? (
@@ -503,7 +548,7 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
                     {isLoading
                       ? <span style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid currentColor', borderTopColor: 'transparent', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
                       : <Sparkles size={12} />}
-                    {isLoading ? 'Gerando…' : form[fieldKey]?.trim() ? 'Regenerar com IA' : 'Gerar com IA'}
+                    {isLoading ? 'Gerando…' : (form[fieldKey]?.trim() || (key === 'amazon' && form.bullets_amazon?.trim())) ? 'Regenerar com IA' : 'Gerar com IA'}
                   </button>
 
                   {/* Preview toggle — Amazon only */}

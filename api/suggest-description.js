@@ -4,7 +4,7 @@
  * Requires a valid Supabase session.
  *
  * Body: { nome, platform: 'ml' | 'amazon' | 'shopee', thumbnail? }
- * Returns: { descricao: string }
+ * Returns: { descricao: string, bullets?: string[] } (bullets only for Amazon)
  */
 import { createClient } from '@supabase/supabase-js'
 
@@ -106,28 +106,33 @@ IMPORTANTE: Nao invente especificacoes que nao sao obvias. Se nao tem certeza de
 
 Responda APENAS com o texto da descricao. Sem explicacoes, sem comentarios.`,
 
-  amazon: `Voce e um especialista em listings para Amazon Brasil (amazon.com.br) que escreve descricoes otimizadas para o algoritmo A9 e conversao.
+  amazon: `Voce e um especialista em listings para Amazon Brasil (amazon.com.br) que escreve descricoes e bullet points otimizados para o algoritmo A9 e conversao.
 
-Seu trabalho: receber o nome de um produto (e possivelmente uma foto) e gerar a descricao para o campo "Descricao do produto" no Seller Central.
+Seu trabalho: receber o nome de um produto (e possivelmente uma foto) e gerar DOIS blocos:
+1. Exatamente 5 bullet points para o campo "Pontos Principais" (Key Product Features)
+2. A descricao HTML para o campo "Descricao do produto"
 
-CONTEXTO DA AMAZON:
-- A descricao aparece abaixo dos bullet points na pagina do produto
-- E indexada pelo A9 — cada palavra-chave conta para ranqueamento
-- O comprador que chega aqui quer detalhes antes de decidir a compra
-- Compradores da Amazon valorizam informacao tecnica e confiabilidade
+REGRAS PARA OS 5 BULLET POINTS:
+- Cada bullet DEVE comecar com um emoji relevante seguido de espaco
+- Cada bullet tem no maximo 200 caracteres (limite da Amazon)
+- Formato: Feature → Beneficio pratico
+- O primeiro bullet deve ser o principal diferencial do produto
+- Varie os emojis entre os 5 bullets — escolha emojis que representem o beneficio
+- Exemplos de bons emojis: ✅ 🔒 💪 ⚡ 🎯 📐 🛡️ 🌟 🔧 📦
+- Texto puro (sem HTML nos bullets)
+- Nao use "•" nem travessao — apenas o emoji como marcador
 
-REGRAS DA PLATAFORMA:
+REGRAS PARA A DESCRICAO:
 - HTML basico permitido: <b>, <br>, <p>, <ul>, <li>, <h2>
 - Retorne APENAS HTML valido — sem texto solto fora de tags
 - SEM CSS inline, classes, IDs, scripts, <div>, <span>, <table>, <img>
-- SEM emojis na descricao
+- SEM emojis na descricao (emojis sao apenas nos bullets)
 - SEM links externos, dados de contato, precos, frete, promocoes
 - SEM claims subjetivos sem comprovacao ("melhor do mundo", "numero 1")
-- SEM CAIXA ALTA excessiva no corpo — apenas em subtitulos se necessario
 - Maximo 2.000 caracteres recomendado
-- NAO repita literalmente o que estaria nos bullet points — agregue informacao
+- NAO repita literalmente o que esta nos bullet points — agregue informacao
 
-ESTRUTURA:
+ESTRUTURA DA DESCRICAO:
 
 <p><b>Paragrafo de abertura:</b> Contexto de uso e problema que o produto resolve. 2-3 linhas que conectam com a necessidade do comprador.</p>
 
@@ -159,7 +164,8 @@ PRINCIPIOS DE COPYWRITING PARA AMAZON:
 
 IMPORTANTE: Nao invente especificacoes que nao sao obvias a partir do nome/imagem. Se nao tem certeza de um dado, omita ou use [verificar]. Melhor ter menos info do que info errada.
 
-Responda APENAS com o HTML da descricao. Sem explicacoes, sem comentarios, sem bloco de codigo markdown.`,
+FORMATO DE RESPOSTA — responda EXATAMENTE neste formato JSON (sem bloco markdown, sem explicacoes):
+{"bullets":["emoji bullet 1","emoji bullet 2","emoji bullet 3","emoji bullet 4","emoji bullet 5"],"descricao":"<p>HTML da descricao aqui...</p>"}`,
 }
 
 // ── Handler ────────────────────────────────────────────────────────────────
@@ -224,7 +230,7 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model:       OPENROUTER_MODEL,
         messages,
-        max_tokens:  1024,
+        max_tokens:  platform === 'amazon' ? 1536 : 1024,
         temperature: 0.7, // slightly higher for creative copywriting
       }),
     })
@@ -235,11 +241,29 @@ export default async function handler(req, res) {
     }
 
     const data = await response.json()
-    const descricao = data.choices?.[0]?.message?.content?.trim() || ''
+    const raw = data.choices?.[0]?.message?.content?.trim() || ''
 
-    if (!descricao) throw new Error('Resposta vazia da IA.')
+    if (!raw) throw new Error('Resposta vazia da IA.')
 
-    return res.status(200).json({ descricao, _model: data.model || OPENROUTER_MODEL })
+    // Amazon returns JSON with { bullets, descricao }
+    if (platform === 'amazon') {
+      try {
+        // Strip markdown code fences if present
+        const cleaned = raw.replace(/^```json?\s*/i, '').replace(/\s*```$/i, '').trim()
+        const parsed = JSON.parse(cleaned)
+        return res.status(200).json({
+          descricao: parsed.descricao || '',
+          bullets: Array.isArray(parsed.bullets) ? parsed.bullets.slice(0, 5) : [],
+          _model: data.model || OPENROUTER_MODEL,
+        })
+      } catch (parseErr) {
+        // Fallback: if JSON parse fails, return raw as description
+        console.warn('[suggest-description] Amazon JSON parse failed, returning raw:', parseErr.message)
+        return res.status(200).json({ descricao: raw, bullets: [], _model: data.model || OPENROUTER_MODEL })
+      }
+    }
+
+    return res.status(200).json({ descricao: raw, _model: data.model || OPENROUTER_MODEL })
 
   } catch (e) {
     console.error('[suggest-description]', e)
