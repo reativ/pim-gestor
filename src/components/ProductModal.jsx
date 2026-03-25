@@ -9,13 +9,25 @@ import { create, update, remove } from '../lib/db'
 import { getFirstImageFromFolder, hasGoogleApiKey, extractFolderId } from '../lib/driveApi'
 import { formatNcm, formatCest, ncmHint, cestHint, eanHint } from '../lib/validation'
 import { suggestNcm } from '../lib/ncm-api'
-import { Image, Youtube, Video, BarChart2, Hash, Tag, DollarSign, ExternalLink, CheckCircle, Scale, Globe, Sparkles } from 'lucide-react'
+import { suggestDescription } from '../lib/description-api'
+import { Image, Youtube, Video, BarChart2, Hash, Tag, DollarSign, ExternalLink, CheckCircle, Scale, Globe, Sparkles, Eye, EyeOff, ShoppingCart } from 'lucide-react'
+
+const PLATFORMS = {
+  ml:     { label: 'Mercado Livre', short: 'ML',     color: '#FFE600', textColor: '#222', format: 'text',
+            placeholder: 'Descreva o produto de forma clara e objetiva. Destaque os principais benefícios, características e diferenciais. Evite repetir o título.' },
+  amazon: { label: 'Amazon',        short: 'Amazon', color: '#FF9900', textColor: '#fff', format: 'html',
+            placeholder: '<h2>Sobre o produto</h2>\n<p>Descreva o produto aqui...</p>\n<h2>Características</h2>\n<ul>\n  <li>Característica 1</li>\n</ul>' },
+  shopee: { label: 'Shopee',        short: 'Shopee', color: '#EE4D2D', textColor: '#fff', format: 'text',
+            placeholder: '✅ Descreva os benefícios do produto\n✅ Adicione especificações técnicas\n✅ Mencione diferenciais\n\nAproveite! Estoque limitado.' },
+}
 
 const EMPTY = {
   nome: '', sku: '', ncm: '', cest: '', ean: '',
   custo: '', fotos_drive: '', thumbnail: '', video_ml: '', video_shopee: '',
   // GS1 fields
   gpc_code: '', peso_bruto: '', peso_liquido: '', conteudo_liquido: '', conteudo_liquido_un: 'GRM', origem: '156',
+  // Marketplace descriptions
+  descricao_ml: '', descricao_amazon: '', descricao_shopee: '',
 }
 
 export default function ProductModal({ product = null, onClose, onSaved, onDeleted }) {
@@ -26,9 +38,14 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [error, setError]       = useState('')
   const [thumbStatus, setThumbStatus] = useState('idle') // idle | loading | found | notfound
-  const [ncmSuggestion, setNcmSuggestion] = useState(null)   // null | { ncm, ncm_descricao, cest, cest_descricao, confianca, justificativa }
+  const [ncmSuggestion, setNcmSuggestion] = useState(null)
   const [ncmSugLoading, setNcmSugLoading] = useState(false)
   const [ncmSugError, setNcmSugError]     = useState('')
+  // Descriptions
+  const [descTab, setDescTab]     = useState('ml')
+  const [descLoading, setDescLoading] = useState({ ml: false, amazon: false, shopee: false })
+  const [descError, setDescError]     = useState({ ml: '', amazon: '', shopee: '' })
+  const [amazonPreview, setAmazonPreview] = useState(false)
   const driveDebounce = useRef(null)
 
   const handleSuggestNcm = async () => {
@@ -43,6 +60,24 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
       setNcmSugError(e.message || 'Erro ao consultar IA.')
     } finally {
       setNcmSugLoading(false)
+    }
+  }
+
+  const handleSuggestDescription = async (platform) => {
+    if (!form.nome.trim()) return
+    setDescLoading((p) => ({ ...p, [platform]: true }))
+    setDescError((p) => ({ ...p, [platform]: '' }))
+    try {
+      const { descricao } = await suggestDescription({
+        nome: form.nome,
+        platform,
+        thumbnail: form.thumbnail || undefined,
+      })
+      set(`descricao_${platform}`, descricao)
+    } catch (e) {
+      setDescError((p) => ({ ...p, [platform]: e.message || 'Erro ao gerar descrição.' }))
+    } finally {
+      setDescLoading((p) => ({ ...p, [platform]: false }))
     }
   }
 
@@ -366,6 +401,144 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
             <InputWithCopy value={form.thumbnail} onChange={(e) => set('thumbnail', e.target.value)}
               placeholder="https://drive.google.com/file/d/..." />
           </Field>
+        </Section>
+
+        {/* ── Descrições por Marketplace ── */}
+        <Section title="Descrições para Marketplace" icon={<ShoppingCart size={14} />}>
+          {/* Tab selector */}
+          <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
+            {Object.entries(PLATFORMS).map(([key, plat]) => {
+              const isActive = descTab === key
+              const hasContent = !!form[`descricao_${key}`]?.trim()
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setDescTab(key)}
+                  style={{
+                    padding: '6px 14px', borderRadius: 8, border: 'none',
+                    background: isActive ? plat.color : '#F0F0F0',
+                    color: isActive ? plat.textColor : 'var(--color-text-soft)',
+                    fontFamily: 'var(--font-family)', fontSize: 12, fontWeight: 700,
+                    cursor: 'pointer', transition: 'all 0.15s',
+                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                    boxShadow: isActive ? '0 2px 6px rgba(0,0,0,0.12)' : 'none',
+                  }}
+                >
+                  {plat.short}
+                  {hasContent && (
+                    <span style={{
+                      width: 6, height: 6, borderRadius: '50%',
+                      background: isActive ? plat.textColor : plat.color,
+                      opacity: isActive ? 0.6 : 1, flexShrink: 0,
+                    }} />
+                  )}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Active tab content */}
+          {Object.entries(PLATFORMS).map(([key, plat]) => {
+            if (descTab !== key) return null
+            const fieldKey = `descricao_${key}`
+            const isLoading = descLoading[key]
+            const errMsg    = descError[key]
+            const isHtml    = plat.format === 'html'
+
+            return (
+              <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+
+                {/* Textarea / preview */}
+                {isHtml && amazonPreview ? (
+                  <div
+                    style={{
+                      minHeight: 180, padding: 14, borderRadius: 8,
+                      border: '1.5px solid var(--color-border)', background: '#fff',
+                      fontSize: 14, lineHeight: 1.6, overflowY: 'auto',
+                    }}
+                    dangerouslySetInnerHTML={{ __html: form[fieldKey] || '<p style="color:#B0B0B0;font-style:italic">Sem conteúdo para pré-visualizar.</p>' }}
+                  />
+                ) : (
+                  <textarea
+                    className="input"
+                    value={form[fieldKey] || ''}
+                    onChange={(e) => set(fieldKey, e.target.value)}
+                    placeholder={plat.placeholder}
+                    rows={8}
+                    style={{ resize: 'vertical', fontFamily: isHtml ? 'monospace' : 'var(--font-family)', fontSize: 13, lineHeight: 1.6 }}
+                  />
+                )}
+
+                {/* Actions row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  {/* Generate with AI */}
+                  <button
+                    type="button"
+                    onClick={() => handleSuggestDescription(key)}
+                    disabled={isLoading || !form.nome.trim()}
+                    title={!form.nome.trim() ? 'Preencha o nome do produto primeiro' : `Gerar descrição para ${plat.label} com IA`}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                      padding: '6px 12px', borderRadius: 8,
+                      border: `1.5px solid ${plat.color === '#FFE600' ? '#D4BF00' : plat.color}`,
+                      background: 'transparent',
+                      color: plat.color === '#FFE600' ? '#8B7500' : plat.color,
+                      fontFamily: 'var(--font-family)', fontSize: 12, fontWeight: 700,
+                      cursor: isLoading || !form.nome.trim() ? 'not-allowed' : 'pointer',
+                      opacity: !form.nome.trim() ? 0.4 : 1,
+                      transition: 'all 0.15s',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (form.nome.trim() && !isLoading) {
+                        e.currentTarget.style.background = plat.color
+                        e.currentTarget.style.color = plat.textColor
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = 'transparent'
+                      e.currentTarget.style.color = plat.color === '#FFE600' ? '#8B7500' : plat.color
+                    }}
+                  >
+                    {isLoading
+                      ? <span style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid currentColor', borderTopColor: 'transparent', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
+                      : <Sparkles size={12} />}
+                    {isLoading ? 'Gerando…' : form[fieldKey]?.trim() ? 'Regenerar com IA' : 'Gerar com IA'}
+                  </button>
+
+                  {/* Preview toggle — Amazon only */}
+                  {isHtml && form[fieldKey]?.trim() && (
+                    <button
+                      type="button"
+                      onClick={() => setAmazonPreview((p) => !p)}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 5,
+                        padding: '6px 11px', borderRadius: 8,
+                        border: '1.5px solid var(--color-border)',
+                        background: 'transparent', color: 'var(--color-text-soft)',
+                        fontFamily: 'var(--font-family)', fontSize: 12, fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {amazonPreview ? <EyeOff size={12} /> : <Eye size={12} />}
+                      {amazonPreview ? 'Editar HTML' : 'Pré-visualizar'}
+                    </button>
+                  )}
+
+                  {/* Char count */}
+                  {form[fieldKey]?.trim() && (
+                    <span style={{ marginLeft: 'auto', fontSize: 11, color: '#B0B0B0' }}>
+                      {form[fieldKey].replace(/<[^>]+>/g, '').length} caracteres
+                    </span>
+                  )}
+                </div>
+
+                {errMsg && (
+                  <p style={{ margin: 0, fontSize: 12, color: '#C73539' }}>{errMsg}</p>
+                )}
+              </div>
+            )
+          })}
         </Section>
 
         {/* ── Links de Vídeo ── */}

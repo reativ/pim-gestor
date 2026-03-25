@@ -4,14 +4,16 @@
  */
 import { CopyIconButton } from '../CopyButton'
 
-export function Section({ title, children }) {
+export function Section({ title, icon, children }) {
   return (
     <div>
       <div style={{
         fontSize: 11.5, fontWeight: 800, textTransform: 'uppercase',
         letterSpacing: '0.08em', color: 'var(--color-text-soft)', marginBottom: 12,
         paddingBottom: 8, borderBottom: '1px solid var(--color-border)',
+        display: 'flex', alignItems: 'center', gap: 6,
       }}>
+        {icon && <span style={{ opacity: 0.7 }}>{icon}</span>}
         {title}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>{children}</div>
