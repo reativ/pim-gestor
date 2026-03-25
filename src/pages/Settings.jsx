@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { ArrowLeft, Sparkles, RotateCcw, Save, Check, AlertCircle } from 'lucide-react'
 import { loadPrompts, savePrompt, deletePrompt } from '../lib/prompts'
+import { DEFAULT_PROMPTS } from '../lib/default-prompts'
 
 const PROMPT_TABS = {
   ml:     { label: 'Mercado Livre', short: 'ML',     color: '#FFE600', textColor: '#222' },
@@ -8,41 +9,58 @@ const PROMPT_TABS = {
   shopee: { label: 'Shopee',        short: 'Shopee', color: '#EE4D2D', textColor: '#fff' },
 }
 
-// These match the defaults in api/suggest-description.js — shown as placeholder/reference
-const DEFAULT_DESCRIPTIONS = {
-  ml:     'Prompt padrão do Mercado Livre — gera título SEO (máx 60 caracteres) + descrição em texto puro, sem emojis, com estrutura: abertura, para quem é, diferenciais, especificações, FAQ.',
-  amazon: 'Prompt padrão da Amazon — gera título SEO (máx 200 caracteres) + 5 bullet points com emoji + descrição HTML com <b>, <p>, <ul>, <li>, <h2>.',
-  shopee: 'Prompt padrão da Shopee — gera título SEO (máx 120 caracteres) + descrição em texto puro com emojis como marcadores, tom jovem e mobile-first.',
-}
-
 export default function Settings({ onBack }) {
   const [tab, setTab]         = useState('ml')
-  const [prompts, setPrompts] = useState({})   // { ml: '...', amazon: '...', shopee: '...' }
+  // Holds the current text in each editor (always pre-filled — default or custom)
+  const [prompts, setPrompts] = useState({ ml: DEFAULT_PROMPTS.ml, amazon: DEFAULT_PROMPTS.amazon, shopee: DEFAULT_PROMPTS.shopee })
+  // Tracks which platforms have a saved custom prompt in the DB
+  const [isCustom, setIsCustom] = useState({ ml: false, amazon: false, shopee: false })
+  // Tracks if text was modified since last save
+  const [isDirty, setIsDirty] = useState({ ml: false, amazon: false, shopee: false })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving]   = useState({})
   const [saved, setSaved]     = useState({})
   const [error, setError]     = useState('')
 
-  // Load custom prompts on mount
+  // Load custom prompts on mount — override defaults where custom exists
   useEffect(() => {
     loadPrompts()
-      .then((data) => setPrompts(data))
+      .then((data) => {
+        const merged = { ...prompts }
+        const custom = { ml: false, amazon: false, shopee: false }
+        for (const key of ['ml', 'amazon', 'shopee']) {
+          if (data[key]?.trim()) {
+            merged[key] = data[key]
+            custom[key] = true
+          }
+        }
+        setPrompts(merged)
+        setIsCustom(custom)
+      })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
   }, [])
+
+  const handleChange = (key, value) => {
+    setPrompts((p) => ({ ...p, [key]: value }))
+    setIsDirty((d) => ({ ...d, [key]: true }))
+  }
 
   const handleSave = async (key) => {
     const text = prompts[key]?.trim() || ''
     setSaving((s) => ({ ...s, [key]: true }))
     setError('')
     try {
-      if (text) {
+      if (text && text !== DEFAULT_PROMPTS[key]) {
         await savePrompt(key, text)
+        setIsCustom((c) => ({ ...c, [key]: true }))
       } else {
-        // Empty = revert to default
+        // Same as default or empty → delete custom, use default
         await deletePrompt(key)
-        setPrompts((p) => { const n = { ...p }; delete n[key]; return n })
+        setPrompts((p) => ({ ...p, [key]: DEFAULT_PROMPTS[key] }))
+        setIsCustom((c) => ({ ...c, [key]: false }))
       }
+      setIsDirty((d) => ({ ...d, [key]: false }))
       setSaved((s) => ({ ...s, [key]: true }))
       setTimeout(() => setSaved((s) => ({ ...s, [key]: false })), 2000)
     } catch (e) {
@@ -57,7 +75,9 @@ export default function Settings({ onBack }) {
     setError('')
     try {
       await deletePrompt(key)
-      setPrompts((p) => { const n = { ...p }; delete n[key]; return n })
+      setPrompts((p) => ({ ...p, [key]: DEFAULT_PROMPTS[key] }))
+      setIsCustom((c) => ({ ...c, [key]: false }))
+      setIsDirty((d) => ({ ...d, [key]: false }))
       setSaved((s) => ({ ...s, [key]: true }))
       setTimeout(() => setSaved((s) => ({ ...s, [key]: false })), 2000)
     } catch (e) {
@@ -102,7 +122,6 @@ export default function Settings({ onBack }) {
 
       {/* Content */}
       <div style={{ maxWidth: 860, margin: '0 auto', padding: '32px 24px' }}>
-        {/* Section: AI Prompts */}
         <div style={{
           background: 'var(--color-white)', borderRadius: 12,
           border: '1px solid var(--color-border)',
@@ -119,18 +138,16 @@ export default function Settings({ onBack }) {
                 Prompts de IA
               </div>
               <div style={{ fontSize: 13, color: 'var(--color-text-soft)', marginTop: 2 }}>
-                Personalize os prompts usados para gerar título, descrição e bullets de cada marketplace. Deixe vazio para usar o padrão.
+                Personalize os prompts usados para gerar título, descrição e bullets de cada marketplace.
               </div>
             </div>
           </div>
 
           {/* Tab selector */}
-          <div style={{
-            padding: '16px 24px 0', display: 'flex', gap: 4,
-          }}>
+          <div style={{ padding: '16px 24px 0', display: 'flex', gap: 4 }}>
             {Object.entries(PROMPT_TABS).map(([key, plat]) => {
               const isActive = tab === key
-              const hasCustom = !!prompts[key]?.trim()
+              const custom = isCustom[key]
               return (
                 <button
                   key={key}
@@ -146,14 +163,14 @@ export default function Settings({ onBack }) {
                   }}
                 >
                   {plat.short}
-                  {hasCustom && (
+                  {custom && (
                     <span style={{
                       fontSize: 10, padding: '1px 6px', borderRadius: 10,
                       background: isActive ? 'rgba(0,0,0,0.15)' : plat.color,
                       color: isActive ? plat.textColor : '#fff',
                       fontWeight: 700,
                     }}>
-                      personalizado
+                      editado
                     </span>
                   )}
                 </button>
@@ -170,7 +187,8 @@ export default function Settings({ onBack }) {
             ) : (
               Object.entries(PROMPT_TABS).map(([key, plat]) => {
                 if (tab !== key) return null
-                const hasCustom = !!prompts[key]?.trim()
+                const custom = isCustom[key]
+                const dirty = isDirty[key]
                 const isSaving = saving[key]
                 const isSaved = saved[key]
 
@@ -179,22 +197,21 @@ export default function Settings({ onBack }) {
                     {/* Info box */}
                     <div style={{
                       padding: '10px 14px', borderRadius: 8,
-                      background: hasCustom ? '#F0F7FF' : '#FAFAFA',
-                      border: `1px solid ${hasCustom ? '#C0D8F0' : 'var(--color-border)'}`,
+                      background: custom ? '#F0F7FF' : '#FAFAFA',
+                      border: `1px solid ${custom ? '#C0D8F0' : 'var(--color-border)'}`,
                       fontSize: 12, color: 'var(--color-text-soft)', lineHeight: 1.5,
                     }}>
-                      {hasCustom
+                      {custom
                         ? <>Prompt <strong>personalizado</strong> ativo para {plat.label}. A IA usará este prompt ao gerar conteúdo.</>
-                        : <>Usando o prompt <strong>padrão</strong> para {plat.label}. {DEFAULT_DESCRIPTIONS[key]}</>
+                        : <>Prompt <strong>padrão</strong> ativo para {plat.label}. Edite livremente — você sempre pode restaurar o original.</>
                       }
                     </div>
 
                     {/* Textarea */}
                     <textarea
                       value={prompts[key] || ''}
-                      onChange={(e) => setPrompts((p) => ({ ...p, [key]: e.target.value }))}
-                      placeholder={`Cole aqui o prompt personalizado para ${plat.label}.\n\nDeixe vazio para usar o prompt padrão.\n\nO prompt deve instruir a IA a retornar um JSON com os campos:\n${key === 'amazon' ? '{"titulo":"...","bullets":["...","...","...","...","..."],"descricao":"..."}' : '{"titulo":"...","descricao":"..."}'}`}
-                      rows={16}
+                      onChange={(e) => handleChange(key, e.target.value)}
+                      rows={18}
                       style={{
                         width: '100%', padding: '14px 16px', borderRadius: 8,
                         border: '1.5px solid var(--color-border)', background: '#fff',
@@ -206,15 +223,13 @@ export default function Settings({ onBack }) {
                       onBlur={(e) => e.target.style.borderColor = 'var(--color-border)'}
                     />
 
-                    {/* Char count */}
+                    {/* Char count + format hint */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span style={{ fontSize: 11, color: '#B0B0B0' }}>
                         {prompts[key]?.length || 0} caracteres
                       </span>
-
-                      {/* Format reminder */}
                       <span style={{ fontSize: 11, color: '#B0B0B0' }}>
-                        Formato de saída obrigatório: JSON com {key === 'amazon' ? 'titulo + bullets + descricao' : 'titulo + descricao'}
+                        Saída esperada: JSON com {key === 'amazon' ? 'titulo + bullets + descricao' : 'titulo + descricao'}
                       </span>
                     </div>
 
@@ -222,23 +237,24 @@ export default function Settings({ onBack }) {
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                       <button
                         onClick={() => handleSave(key)}
-                        disabled={isSaving}
+                        disabled={isSaving || !dirty}
                         style={{
                           display: 'inline-flex', alignItems: 'center', gap: 6,
                           padding: '8px 16px', borderRadius: 8,
-                          background: 'var(--color-primary)', color: '#fff',
+                          background: dirty ? 'var(--color-primary)' : '#E0E0E0',
+                          color: dirty ? '#fff' : '#999',
                           border: 'none', fontFamily: 'var(--font-family)',
                           fontSize: 13, fontWeight: 700,
-                          cursor: isSaving ? 'not-allowed' : 'pointer',
+                          cursor: isSaving || !dirty ? 'not-allowed' : 'pointer',
                           opacity: isSaving ? 0.6 : 1,
-                          transition: 'opacity 0.15s',
+                          transition: 'all 0.15s',
                         }}
                       >
                         {isSaved ? <Check size={14} /> : <Save size={14} />}
-                        {isSaving ? 'Salvando…' : isSaved ? 'Salvo!' : 'Salvar prompt'}
+                        {isSaving ? 'Salvando…' : isSaved ? 'Salvo!' : 'Salvar'}
                       </button>
 
-                      {hasCustom && (
+                      {(custom || (dirty && prompts[key] !== DEFAULT_PROMPTS[key])) && (
                         <button
                           onClick={() => handleReset(key)}
                           disabled={isSaving}
