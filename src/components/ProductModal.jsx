@@ -13,11 +13,11 @@ import { suggestDescription } from '../lib/description-api'
 import { Image, Youtube, Video, BarChart2, Hash, Tag, DollarSign, ExternalLink, CheckCircle, Scale, Globe, Sparkles, Eye, EyeOff, ShoppingCart } from 'lucide-react'
 
 const PLATFORMS = {
-  ml:     { label: 'Mercado Livre', short: 'ML',     color: '#FFE600', textColor: '#222', format: 'text',
+  ml:     { label: 'Mercado Livre', short: 'ML',     color: '#FFE600', textColor: '#222', format: 'text', titleMax: 60,
             placeholder: 'Descreva o produto de forma clara e objetiva. Destaque os principais benefícios, características e diferenciais. Evite repetir o título.' },
-  amazon: { label: 'Amazon',        short: 'Amazon', color: '#FF9900', textColor: '#fff', format: 'html',
+  amazon: { label: 'Amazon',        short: 'Amazon', color: '#FF9900', textColor: '#fff', format: 'html', titleMax: 200,
             placeholder: '<h2>Sobre o produto</h2>\n<p>Descreva o produto aqui...</p>\n<h2>Características</h2>\n<ul>\n  <li>Característica 1</li>\n</ul>' },
-  shopee: { label: 'Shopee',        short: 'Shopee', color: '#EE4D2D', textColor: '#fff', format: 'text',
+  shopee: { label: 'Shopee',        short: 'Shopee', color: '#EE4D2D', textColor: '#fff', format: 'text', titleMax: 120,
             placeholder: '✅ Descreva os benefícios do produto\n✅ Adicione especificações técnicas\n✅ Mencione diferenciais\n\nAproveite! Estoque limitado.' },
 }
 
@@ -26,7 +26,8 @@ const EMPTY = {
   custo: '', fotos_drive: '', thumbnail: '', video_ml: '', video_shopee: '',
   // GS1 fields
   gpc_code: '', peso_bruto: '', peso_liquido: '', conteudo_liquido: '', conteudo_liquido_un: 'GRM', origem: '156',
-  // Marketplace descriptions
+  // Marketplace content
+  titulo_ml: '', titulo_amazon: '', titulo_shopee: '',
   descricao_ml: '', descricao_amazon: '', descricao_shopee: '',
   bullets_amazon: '',
 }
@@ -74,11 +75,15 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
         platform,
         thumbnail: form.thumbnail || undefined,
       })
-      set(`descricao_${platform}`, result.descricao)
-      // Amazon also returns bullets
-      if (platform === 'amazon' && result.bullets?.length) {
-        set('bullets_amazon', result.bullets.join('\n'))
-      }
+      // Update all fields at once to avoid multiple re-renders
+      setForm((f) => {
+        const updated = { ...f, [`descricao_${platform}`]: result.descricao }
+        if (result.titulo) updated[`titulo_${platform}`] = result.titulo
+        if (platform === 'amazon' && result.bullets?.length) {
+          updated.bullets_amazon = result.bullets.join('\n')
+        }
+        return updated
+      })
     } catch (e) {
       setDescError((p) => ({ ...p, [platform]: e.message || 'Erro ao gerar descrição.' }))
     } finally {
@@ -409,12 +414,12 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
         </Section>
 
         {/* ── Descrições por Marketplace ── */}
-        <Section title="Descrições para Marketplace" icon={<ShoppingCart size={14} />}>
+        <Section title="Conteúdo para Marketplace" icon={<ShoppingCart size={14} />}>
           {/* Tab selector */}
           <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
             {Object.entries(PLATFORMS).map(([key, plat]) => {
               const isActive = descTab === key
-              const hasContent = !!form[`descricao_${key}`]?.trim() || (key === 'amazon' && !!form.bullets_amazon?.trim())
+              const hasContent = !!form[`titulo_${key}`]?.trim() || !!form[`descricao_${key}`]?.trim() || (key === 'amazon' && !!form.bullets_amazon?.trim())
               return (
                 <button
                   key={key}
@@ -454,6 +459,36 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
             return (
               <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
 
+                {/* SEO Title */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text-soft)' }}>
+                    Título SEO — {plat.label}
+                  </label>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <input
+                      className="input"
+                      value={form[`titulo_${key}`] || ''}
+                      onChange={(e) => set(`titulo_${key}`, e.target.value)}
+                      placeholder={`Título otimizado para busca — máx. ${plat.titleMax} caracteres`}
+                      maxLength={plat.titleMax}
+                      style={{ flex: 1, fontSize: 13, fontWeight: 600 }}
+                    />
+                    <CopyIconButton value={form[`titulo_${key}`] || ''} />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 11, color: '#B0B0B0' }}>
+                      Palavras-chave que os compradores usam para buscar o produto
+                    </span>
+                    <span style={{ fontSize: 11, color: (form[`titulo_${key}`]?.length || 0) > plat.titleMax ? '#C73539' : '#B0B0B0' }}>
+                      {form[`titulo_${key}`]?.length || 0}/{plat.titleMax}
+                    </span>
+                  </div>
+                </div>
+
+                {key !== 'amazon' && form[`titulo_${key}`]?.trim() && (
+                  <hr style={{ border: 'none', borderTop: '1px solid var(--color-border)', margin: '2px 0' }} />
+                )}
+
                 {/* Amazon Bullet Points */}
                 {key === 'amazon' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -490,9 +525,14 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
                 )}
 
                 {/* Separator between bullets and description for Amazon */}
-                {key === 'amazon' && form.bullets_amazon?.trim() && (
+                {key === 'amazon' && (form.bullets_amazon?.trim() || form.titulo_amazon?.trim()) && (
                   <hr style={{ border: 'none', borderTop: '1px solid var(--color-border)', margin: '4px 0' }} />
                 )}
+
+                {/* Description label */}
+                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--color-text-soft)' }}>
+                  Descrição — {plat.label}
+                </label>
 
                 {/* Textarea / preview */}
                 {isHtml && amazonPreview ? (
@@ -548,7 +588,7 @@ export default function ProductModal({ product = null, onClose, onSaved, onDelet
                     {isLoading
                       ? <span style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid currentColor', borderTopColor: 'transparent', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
                       : <Sparkles size={12} />}
-                    {isLoading ? 'Gerando…' : (form[fieldKey]?.trim() || (key === 'amazon' && form.bullets_amazon?.trim())) ? 'Regenerar com IA' : 'Gerar com IA'}
+                    {isLoading ? 'Gerando…' : (form[`titulo_${key}`]?.trim() || form[fieldKey]?.trim() || (key === 'amazon' && form.bullets_amazon?.trim())) ? 'Regenerar com IA' : 'Gerar com IA'}
                   </button>
 
                   {/* Preview toggle — Amazon only */}

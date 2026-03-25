@@ -1,10 +1,10 @@
 /**
  * POST /api/suggest-description
- * Generates a marketplace-optimized product description using OpenRouter AI.
+ * Generates marketplace-optimized title + description (+ bullets for Amazon) using OpenRouter AI.
  * Requires a valid Supabase session.
  *
  * Body: { nome, platform: 'ml' | 'amazon' | 'shopee', thumbnail? }
- * Returns: { descricao: string, bullets?: string[] } (bullets only for Amazon)
+ * Returns: { titulo: string, descricao: string, bullets?: string[] }
  */
 import { createClient } from '@supabase/supabase-js'
 
@@ -14,9 +14,32 @@ const OPENROUTER_URL   = 'https://openrouter.ai/api/v1/chat/completions'
 // ── Platform-specific prompts ──────────────────────────────────────────────
 
 const PLATFORM_PROMPTS = {
-  ml: `Voce e um vendedor experiente do Mercado Livre que escreve descricoes que vendem.
+  ml: `Voce e um vendedor experiente do Mercado Livre que cria anuncios otimizados para ranqueamento e conversao.
 
-Seu trabalho: receber o nome de um produto (e possivelmente uma foto) e gerar uma descricao completa, pronta para colar no campo de descricao do Mercado Livre.
+Seu trabalho: receber o nome de um produto (e possivelmente uma foto) e gerar o TITULO SEO e a DESCRICAO completa para o Mercado Livre.
+
+=== TITULO (campo "titulo") ===
+
+REGRAS DO TITULO:
+- Maximo 60 caracteres (limite do ML — titulos maiores sao cortados)
+- Estrutura ideal: [Produto] + [Atributo Principal] + [Diferencial/Uso]
+- Use as palavras que os compradores REALMENTE digitam na busca do ML
+- Pense: "o que alguem digitaria no ML para encontrar esse produto?"
+- NAO use marcas inventadas — se nao sabe a marca, omita
+- NAO use caixa alta total (ex: "CAIXA ORGANIZADORA") — use caixa normal
+- NAO use caracteres especiais, emojis, pontuacao excessiva
+- NAO repita palavras — cada palavra deve agregar valor de busca
+- Separe atributos naturalmente — sem barras nem pipes
+- Exemplos bons: "Caixa Organizadora Plastica 10L Com Tampa Empilhavel"
+- Exemplos ruins: "CAIXA ORGANIZADORA | PLASTICA | 10 LITROS | BARATA"
+
+DICAS DE SEO PARA ML:
+- Coloque as palavras mais buscadas no inicio do titulo
+- Inclua material, tamanho, capacidade quando relevante
+- Pense em sinonimos que o comprador poderia usar
+- O titulo e o fator #1 de ranqueamento no ML
+
+=== DESCRICAO (campo "descricao") ===
 
 REGRAS DA PLATAFORMA (violar = rejeicao do anuncio):
 - TEXTO PURO obrigatorio — sem HTML, sem markdown, sem negrito, sem italico
@@ -59,11 +82,35 @@ TOM DE VOZ:
 
 IMPORTANTE: Mesmo que voce nao conheca todas as especificacoes, escreva a descricao com o que tem. Invente especificacoes tecnicas realistas apenas se for um produto comum e obvio — caso contrario, deixe marcacoes como [verificar] nos dados que nao tem certeza.
 
-Responda APENAS com o texto da descricao pronta para colar. Sem explicacoes, sem comentarios.`,
+FORMATO DE RESPOSTA — responda EXATAMENTE neste formato JSON (sem bloco markdown, sem explicacoes):
+{"titulo":"titulo SEO aqui","descricao":"texto da descricao aqui"}`,
 
-  shopee: `Voce e um vendedor top da Shopee Brasil que cria descricoes de produto com alto engajamento.
+  shopee: `Voce e um vendedor top da Shopee Brasil que cria anuncios otimizados para busca e conversao.
 
-Seu trabalho: receber o nome de um produto (e possivelmente uma foto) e gerar uma descricao otimizada para a Shopee.
+Seu trabalho: receber o nome de um produto (e possivelmente uma foto) e gerar o TITULO SEO e a DESCRICAO para a Shopee.
+
+=== TITULO (campo "titulo") ===
+
+REGRAS DO TITULO:
+- Maximo 120 caracteres (limite da Shopee)
+- Estrutura ideal: [Produto] + [Atributo Principal] + [Material/Tamanho] + [Uso/Beneficio]
+- Use palavras que compradores jovens digitam na busca da Shopee
+- Pense mobile-first: o titulo aparece cortado no celular, as primeiras palavras sao as mais importantes
+- NAO use marcas inventadas — se nao sabe a marca, omita
+- NAO use caixa alta total — use caixa normal
+- NAO use emojis no titulo
+- NAO repita palavras
+- Inclua variantes de busca: se o produto e "pochete", inclua "bolsa de cintura" se couber
+- Exemplos bons: "Pochete Impermeavel Esportiva Bolsa De Cintura Corrida Academia"
+- Exemplos ruins: "POCHETE BARATA OFERTA IMPERDIVEL COMPRE AGORA"
+
+DICAS DE SEO PARA SHOPEE:
+- A Shopee prioriza titulos com palavras-chave que correspondem a busca exata
+- Coloque a palavra principal no comeco
+- Inclua sinonimos e variacoes que o publico jovem usaria
+- Pense em como o produto aparece em buscas no celular
+
+=== DESCRICAO (campo "descricao") ===
 
 CONTEXTO DA SHOPEE:
 - Publico mais jovem, mobile-first, busca por preco-beneficio
@@ -104,13 +151,40 @@ TOM DE VOZ:
 
 IMPORTANTE: Nao invente especificacoes que nao sao obvias. Se nao tem certeza de um dado tecnico, omita em vez de chutar.
 
-Responda APENAS com o texto da descricao. Sem explicacoes, sem comentarios.`,
+FORMATO DE RESPOSTA — responda EXATAMENTE neste formato JSON (sem bloco markdown, sem explicacoes):
+{"titulo":"titulo SEO aqui","descricao":"texto da descricao aqui"}`,
 
-  amazon: `Voce e um especialista em listings para Amazon Brasil (amazon.com.br) que escreve descricoes e bullet points otimizados para o algoritmo A9 e conversao.
+  amazon: `Voce e um especialista em listings para Amazon Brasil (amazon.com.br) que escreve titulos, bullet points e descricoes otimizados para o algoritmo A9 e conversao.
 
-Seu trabalho: receber o nome de um produto (e possivelmente uma foto) e gerar DOIS blocos:
-1. Exatamente 5 bullet points para o campo "Pontos Principais" (Key Product Features)
-2. A descricao HTML para o campo "Descricao do produto"
+Seu trabalho: receber o nome de um produto (e possivelmente uma foto) e gerar TRES blocos:
+1. O titulo otimizado para SEO/A9
+2. Exatamente 5 bullet points para o campo "Pontos Principais" (Key Product Features)
+3. A descricao HTML para o campo "Descricao do produto"
+
+=== TITULO (campo "titulo") ===
+
+REGRAS DO TITULO AMAZON:
+- Maximo 200 caracteres (limite da Amazon Brasil)
+- Estrutura ideal: [Marca] + [Linha/Modelo] + [Produto] + [Atributos-chave] + [Quantidade/Tamanho]
+- O algoritmo A9 da peso maior para palavras no titulo — e o fator #1 de ranqueamento
+- Use as palavras que compradores digitam na busca da Amazon
+- Se souber a marca, coloque primeiro (A9 prioriza brand match)
+- Se NAO souber a marca, comece direto pelo produto
+- NAO use caixa alta total — apenas primeira letra de cada palavra
+- NAO use emojis, caracteres especiais, pontos de exclamacao
+- NAO repita palavras — cada palavra deve ser unica e agregar busca
+- NAO inclua precos, frete, "melhor", "oferta" ou claims subjetivos
+- Inclua atributos indexaveis: material, cor, tamanho, voltagem, compatibilidade
+- Exemplos bons: "Furadeira De Impacto Profissional 650W 13mm Com Maleta E Brocas Bivolt"
+- Exemplos ruins: "FURADEIRA BARATA | MELHOR FURADEIRA | OFERTA | COMPRE JA"
+
+DICAS DE SEO PARA AMAZON A9:
+- Palavras no titulo tem 3x mais peso que nos bullet points
+- Inclua sinonimos relevantes (ex: "furadeira" e "parafusadeira" se aplicavel)
+- Pense em long-tail keywords: "furadeira de impacto profissional para concreto"
+- Cada palavra adicional e uma chance de aparecer em mais buscas
+
+=== 5 BULLET POINTS (campo "bullets") ===
 
 REGRAS PARA OS 5 BULLET POINTS:
 - Cada bullet DEVE comecar com um emoji relevante seguido de espaco
@@ -121,6 +195,8 @@ REGRAS PARA OS 5 BULLET POINTS:
 - Exemplos de bons emojis: ✅ 🔒 💪 ⚡ 🎯 📐 🛡️ 🌟 🔧 📦
 - Texto puro (sem HTML nos bullets)
 - Nao use "•" nem travessao — apenas o emoji como marcador
+
+=== DESCRICAO (campo "descricao") ===
 
 REGRAS PARA A DESCRICAO:
 - HTML basico permitido: <b>, <br>, <p>, <ul>, <li>, <h2>
@@ -165,7 +241,7 @@ PRINCIPIOS DE COPYWRITING PARA AMAZON:
 IMPORTANTE: Nao invente especificacoes que nao sao obvias a partir do nome/imagem. Se nao tem certeza de um dado, omita ou use [verificar]. Melhor ter menos info do que info errada.
 
 FORMATO DE RESPOSTA — responda EXATAMENTE neste formato JSON (sem bloco markdown, sem explicacoes):
-{"bullets":["emoji bullet 1","emoji bullet 2","emoji bullet 3","emoji bullet 4","emoji bullet 5"],"descricao":"<p>HTML da descricao aqui...</p>"}`,
+{"titulo":"titulo SEO aqui","bullets":["emoji bullet 1","emoji bullet 2","emoji bullet 3","emoji bullet 4","emoji bullet 5"],"descricao":"<p>HTML da descricao aqui...</p>"}`,
 }
 
 // ── Handler ────────────────────────────────────────────────────────────────
@@ -193,29 +269,24 @@ export default async function handler(req, res) {
   if (!process.env.OPENROUTER_API_KEY)
     return res.status(500).json({ error: 'OPENROUTER_API_KEY não configurada.' })
 
-  // Build prompt config
-  const promptConfig = PLATFORM_PROMPTS[platform]
-  const systemPrompt = typeof promptConfig === 'string' ? promptConfig : promptConfig.system
+  // Build prompt
+  const systemPrompt = PLATFORM_PROMPTS[platform]
 
-  // Build user message — include image if provided
-  const messages = [
-    { role: 'system', content: systemPrompt },
-  ]
+  const platformLabel = platform === 'ml' ? 'Mercado Livre' : platform === 'amazon' ? 'Amazon Brasil' : 'Shopee Brasil'
+  const userText = `Produto: ${nome.trim()}\n\nGere o título SEO e conteúdo completo para ${platformLabel}.`
+
+  const messages = [{ role: 'system', content: systemPrompt }]
 
   if (thumbnail) {
-    // Use vision: send image + text
     messages.push({
       role: 'user',
       content: [
         { type: 'image_url', image_url: { url: thumbnail } },
-        { type: 'text',      text: `Produto: ${nome.trim()}\n\nGere a descrição para ${platform === 'ml' ? 'Mercado Livre' : platform === 'amazon' ? 'Amazon Brasil' : 'Shopee Brasil'}.` },
+        { type: 'text',      text: userText },
       ],
     })
   } else {
-    messages.push({
-      role: 'user',
-      content: `Produto: ${nome.trim()}\n\nGere a descrição para ${platform === 'ml' ? 'Mercado Livre' : platform === 'amazon' ? 'Amazon Brasil' : 'Shopee Brasil'}.`,
-    })
+    messages.push({ role: 'user', content: userText })
   }
 
   try {
@@ -230,8 +301,8 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model:       OPENROUTER_MODEL,
         messages,
-        max_tokens:  platform === 'amazon' ? 1536 : 1024,
-        temperature: 0.7, // slightly higher for creative copywriting
+        max_tokens:  platform === 'amazon' ? 2048 : 1536,
+        temperature: 0.7,
       }),
     })
 
@@ -245,25 +316,32 @@ export default async function handler(req, res) {
 
     if (!raw) throw new Error('Resposta vazia da IA.')
 
-    // Amazon returns JSON with { bullets, descricao }
-    if (platform === 'amazon') {
-      try {
-        // Strip markdown code fences if present
-        const cleaned = raw.replace(/^```json?\s*/i, '').replace(/\s*```$/i, '').trim()
-        const parsed = JSON.parse(cleaned)
-        return res.status(200).json({
-          descricao: parsed.descricao || '',
-          bullets: Array.isArray(parsed.bullets) ? parsed.bullets.slice(0, 5) : [],
-          _model: data.model || OPENROUTER_MODEL,
-        })
-      } catch (parseErr) {
-        // Fallback: if JSON parse fails, return raw as description
-        console.warn('[suggest-description] Amazon JSON parse failed, returning raw:', parseErr.message)
-        return res.status(200).json({ descricao: raw, bullets: [], _model: data.model || OPENROUTER_MODEL })
-      }
-    }
+    // All platforms now return JSON
+    try {
+      const cleaned = raw.replace(/^```json?\s*/i, '').replace(/\s*```$/i, '').trim()
+      const parsed = JSON.parse(cleaned)
 
-    return res.status(200).json({ descricao: raw, _model: data.model || OPENROUTER_MODEL })
+      const result = {
+        titulo:   parsed.titulo || '',
+        descricao: parsed.descricao || '',
+        _model:   data.model || OPENROUTER_MODEL,
+      }
+
+      // Amazon also includes bullets
+      if (platform === 'amazon') {
+        result.bullets = Array.isArray(parsed.bullets) ? parsed.bullets.slice(0, 5) : []
+      }
+
+      return res.status(200).json(result)
+    } catch (parseErr) {
+      console.warn('[suggest-description] JSON parse failed, returning raw:', parseErr.message)
+      return res.status(200).json({
+        titulo: '',
+        descricao: raw,
+        bullets: platform === 'amazon' ? [] : undefined,
+        _model: data.model || OPENROUTER_MODEL,
+      })
+    }
 
   } catch (e) {
     console.error('[suggest-description]', e)
