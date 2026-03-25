@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react'
 import Products from './pages/Products'
+import Settings from './pages/Settings'
 import Login from './pages/Login'
 import { getSession, onAuthChange } from './lib/auth'
 import { hasSupabase } from './lib/supabase'
 
 export default function App() {
   const [session, setSession] = useState(undefined) // undefined = checking
+  const [page, setPage] = useState('products')       // 'products' | 'settings'
 
   useEffect(() => {
     if (!hasSupabase) { setSession(null); return }
@@ -28,5 +30,9 @@ export default function App() {
     return <Login onAuth={() => {}} />
   }
 
-  return <Products session={session} />
+  if (page === 'settings') {
+    return <Settings onBack={() => setPage('products')} />
+  }
+
+  return <Products session={session} onNavigate={setPage} />
 }

@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
-import { LogOut, ChevronDown, Search, X } from 'lucide-react'
+import { LogOut, ChevronDown, Search, X, Settings } from 'lucide-react'
 import { signOut } from '../lib/auth'
 import { hasSupabase } from '../lib/supabase'
 
-export default function Navbar({ userEmail, search = '', onSearchChange }) {
+export default function Navbar({ userEmail, search = '', onSearchChange, onNavigate }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
@@ -163,6 +163,26 @@ export default function Navbar({ userEmail, search = '', onSearchChange }) {
                     </div>
                   </div>
                 </div>
+
+                {/* Settings button */}
+                {onNavigate && (
+                  <button
+                    onClick={() => { setOpen(false); onNavigate('settings') }}
+                    style={{
+                      width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '12px 16px', background: 'none', border: 'none',
+                      cursor: 'pointer', fontFamily: 'var(--font-family)',
+                      fontSize: 14, fontWeight: 600, color: 'var(--color-text)',
+                      transition: 'background 0.12s', textAlign: 'left',
+                      borderBottom: '1px solid var(--color-border)',
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = '#F5F5F5'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
+                  >
+                    <Settings size={15} />
+                    Configurações
+                  </button>
+                )}
 
                 {/* Logout button */}
                 <button

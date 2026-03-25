@@ -10,7 +10,7 @@ import ImportModal from '../components/ImportModal'
 import { List, Table2, Download, RefreshCw, X, Plus, Upload } from 'lucide-react'
 import { LoadingState, EmptyState, NoResults } from '../components/ProductsEmptyStates'
 
-export default function Products({ session }) {
+export default function Products({ session, onNavigate }) {
   const [products, setProducts] = useState([])
   const [loading, setLoading]   = useState(true)
   const [search, setSearch]     = useState('')
@@ -41,7 +41,7 @@ export default function Products({ session }) {
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--color-bg)' }}>
-      <Navbar userEmail={session?.user?.email} search={search} onSearchChange={setSearch} />
+      <Navbar userEmail={session?.user?.email} search={search} onSearchChange={setSearch} onNavigate={onNavigate} />
 
       <main style={{ maxWidth: 1280, margin: '0 auto', padding: '20px 24px 40px' }}>
 

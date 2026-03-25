@@ -275,8 +275,22 @@ export default async function handler(req, res) {
   if (!process.env.OPENROUTER_API_KEY)
     return res.status(500).json({ error: 'OPENROUTER_API_KEY não configurada.' })
 
-  // Build prompt
-  const systemPrompt = PLATFORM_PROMPTS[platform]
+  // Check for custom prompt
+  let systemPrompt = PLATFORM_PROMPTS[platform]
+  try {
+    const { data: customRow } = await supabase
+      .from('user_prompts')
+      .select('prompt_text')
+      .eq('user_id', user.id)
+      .eq('prompt_key', platform)
+      .maybeSingle()
+    if (customRow?.prompt_text?.trim()) {
+      systemPrompt = customRow.prompt_text
+    }
+  } catch (e) {
+    // Ignore — use default prompt if custom prompts table doesn't exist or query fails
+    console.warn('[suggest-description] Custom prompt lookup failed:', e.message)
+  }
 
   const platformLabel = platform === 'ml' ? 'Mercado Livre' : platform === 'amazon' ? 'Amazon Brasil' : 'Shopee Brasil'
   const userText = `Produto: ${nome.trim()}\n\nGere o título SEO e conteúdo completo para ${platformLabel}.`
